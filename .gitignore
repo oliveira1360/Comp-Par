@@ -1,0 +1,28 @@
+# Dados (nunca cometer ficheiros pesados no repositório)
+data/
+*.parquet
+*.csv
+*.gz
+
+# Python & IDEs
+__pycache__/
+*.py[cod]
+*$py.class
+.ipynb_checkpoints/
+.idea/
+.vscode/
+
+# Logs e outputs
+logs/
+output/
+*.log
+
+# Checkpoints do Spark
+checkpoint/
+metastore_db/
+warehouse/
+
+# Local temporário e agentes
+.agents/
+lab3/
+
