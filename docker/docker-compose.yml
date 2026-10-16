@@ -10,7 +10,7 @@ services:
       - "8080:8080"
       - "7077:7077"
     volumes:
-      - ../src:/apps
+      - ../build/libs:/apps
       - ../data:/data
 
   spark-worker:
@@ -24,7 +24,7 @@ services:
     depends_on:
       - spark-master
     volumes:
-      - ../src:/apps
+      - ../build/libs:/apps
       - ../data:/data
 
   jupyter:
@@ -45,7 +45,7 @@ services:
     volumes:
       - ../notebooks:/workspace/notebooks
       - ../src:/workspace/src
-      - ../src:/apps
+      - ../build/libs:/apps
       - ../data:/data
     working_dir: /workspace
     depends_on:

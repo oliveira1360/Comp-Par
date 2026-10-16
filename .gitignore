@@ -4,7 +4,11 @@ data/
 *.csv
 *.gz
 
-# Python & IDEs
+# Gradle, Kotlin & IDEs
+.gradle/
+build/
+*.jar
+!gradle/wrapper/gradle-wrapper.jar
 __pycache__/
 *.py[cod]
 *$py.class
