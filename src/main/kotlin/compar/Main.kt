@@ -2,7 +2,9 @@ package compar
 
 import org.apache.spark.sql.Dataset
 import org.apache.spark.sql.Row
+import org.apache.spark.sql.SaveMode
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.expressions.Window
 import org.apache.spark.sql.functions as sf
 import org.apache.spark.sql.types.DataTypes
 import org.apache.spark.sql.types.StructField
@@ -12,14 +14,15 @@ import org.apache.spark.sql.types.StructType
  * Main.kt - Pipeline Spark em Kotlin para Análise dos Dados de NYC Yellow Taxi
  * Computação Paralela (ComPar 26/27)
  *
- * Estrutura inicial com foco na operação obrigatória M1 (Ingestão e Limpeza),
- * suporte a amostragem (--sample), profiling com SparkProfiler e execução
+ * Implementação Baseline (MVP) das operações obrigatórias M1, M2 e M3,
+ * com suporte a amostragem (--sample), profiling com SparkProfiler e execução
  * tanto em modo local como no cluster Docker.
  */
 
 data class CliArgs(
     val data: String = "data/yellow_tripdata_2024-01.parquet",
     val lookup: String = "data/taxi_zone_lookup.csv",
+    val output: String = "output",
     val master: String? = null,
     val sample: Double? = null,
     val profile: Boolean = false
@@ -28,6 +31,7 @@ data class CliArgs(
 fun parseArgs(args: Array<String>): CliArgs {
     var data = "data/yellow_tripdata_2024-01.parquet"
     var lookup = "data/taxi_zone_lookup.csv"
+    var output = "output"
     var master: String? = null
     var sample: Double? = null
     var profile = false
@@ -42,6 +46,10 @@ fun parseArgs(args: Array<String>): CliArgs {
             "--lookup" -> {
                 require(i + 1 < args.size) { "O parâmetro --lookup requer um valor." }
                 lookup = args[++i]
+            }
+            "--output" -> {
+                require(i + 1 < args.size) { "O parâmetro --output requer um valor." }
+                output = args[++i]
             }
             "--master" -> {
                 require(i + 1 < args.size) { "O parâmetro --master requer um valor." }
@@ -61,6 +69,7 @@ fun parseArgs(args: Array<String>): CliArgs {
                     Uso: spark-submit ... nyc-taxi-analytics.jar [opções]
                       --data <path>       Caminho para ficheiro(s) Parquet de entrada (default: data/yellow_tripdata_2024-01.parquet)
                       --lookup <path>     Caminho para o ficheiro taxi_zone_lookup.csv (default: data/taxi_zone_lookup.csv)
+                      --output <path>     Diretoria de saída para resultados Parquet (default: output)
                       --master <url>      URL do Spark Master (ex: local[*] ou spark://spark-master:7077)
                       --sample <fraction> Fração de amostragem dos dados (ex: 0.1 para 10%)
                       --profile           Ativar o SparkProfiler para recolha de métricas de stages/shuffles
@@ -75,7 +84,7 @@ fun parseArgs(args: Array<String>): CliArgs {
         i++
     }
 
-    return CliArgs(data = data, lookup = lookup, master = master, sample = sample, profile = profile)
+    return CliArgs(data = data, lookup = lookup, output = output, master = master, sample = sample, profile = profile)
 }
 
 fun getSparkSession(masterUrl: String? = null, appName: String = "NYC-Taxi-Analytics"): SparkSession {
@@ -86,8 +95,8 @@ fun getSparkSession(masterUrl: String? = null, appName: String = "NYC-Taxi-Analy
 
     // Configurações recomendadas de memória para o ambiente Docker/Local
     builder = builder
-        .config("spark.driver.memory", "2g")
-        .config("spark.executor.memory", "1536m")
+        .config("spark.driver.memory", "1536m")
+        .config("spark.executor.memory", "1024m")
         .config("spark.ui.showConsoleProgress", "false")
         .config("spark.sql.adaptive.enabled", "true")
 
@@ -137,6 +146,8 @@ fun runM1IngestionAndCleaning(
 
     // Cast e seleção das colunas essenciais
     var df = dfRaw
+        .withColumn("tpep_pickup_datetime", sf.col("tpep_pickup_datetime").cast(DataTypes.TimestampType))
+        .withColumn("tpep_dropoff_datetime", sf.col("tpep_dropoff_datetime").cast(DataTypes.TimestampType))
         .withColumn("passenger_count", sf.col("passenger_count").cast(DataTypes.IntegerType))
         .withColumn("RatecodeID", sf.col("RatecodeID").cast(DataTypes.IntegerType))
         .withColumn("payment_type", sf.col("payment_type").cast(DataTypes.IntegerType))
@@ -210,6 +221,145 @@ fun runM1IngestionAndCleaning(
     return dfClean
 }
 
+/**
+ * Carrega a tabela de lookup de zonas (taxi_zone_lookup.csv).
+ */
+fun loadZoneLookup(spark: SparkSession, lookupPath: String): Dataset<Row> {
+    println("\n[Zones] A carregar tabela de zonas de: $lookupPath")
+    return spark.read()
+        .option("header", "true")
+        .option("inferSchema", "true")
+        .csv(lookupPath)
+        .withColumn("LocationID", sf.col("LocationID").cast(DataTypes.IntegerType))
+}
+
+/**
+ * M2 - Temporal Demand Analysis:
+ * Para cada triplo (pickup_borough, day_of_week, hour_of_day), calcula:
+ * - total de viagens (total_trips)
+ * - média de fare_amount (mean_fare_amount)
+ * - duração média da viagem em minutos (mean_trip_duration_min)
+ * - distância média (mean_trip_distance)
+ * Grava o resultado particionado por pickup_borough em formato Parquet.
+ */
+fun runM2TemporalDemandAnalysis(
+    dfClean: Dataset<Row>,
+    zonesDf: Dataset<Row>,
+    outputDir: String
+): Dataset<Row> {
+    println("\n--- [M2] Análise de Procura Temporal ---")
+
+    val zonesPickup = zonesDf.select(
+        sf.col("LocationID").alias("PULocationID"),
+        sf.col("Borough").alias("pickup_borough")
+    )
+
+    val durationMinExpr = sf.unix_timestamp(sf.col("tpep_dropoff_datetime"))
+        .minus(sf.unix_timestamp(sf.col("tpep_pickup_datetime")))
+        .divide(60.0)
+
+    val m2Df = dfClean
+        .join(zonesPickup, "PULocationID")
+        .withColumn("day_of_week", sf.dayofweek(sf.col("tpep_pickup_datetime")))
+        .withColumn("hour_of_day", sf.hour(sf.col("tpep_pickup_datetime")))
+        .withColumn("trip_duration_min", durationMinExpr)
+        .groupBy("pickup_borough", "day_of_week", "hour_of_day")
+        .agg(
+            sf.count("*").alias("total_trips"),
+            sf.avg("fare_amount").alias("mean_fare_amount"),
+            sf.avg("trip_duration_min").alias("mean_trip_duration_min"),
+            sf.avg("trip_distance").alias("mean_trip_distance")
+        )
+        .orderBy("pickup_borough", "day_of_week", "hour_of_day")
+
+    m2Df.show(20, false)
+
+    val m2OutputPath = "$outputDir/m2_temporal_demand"
+    println("[M2] A gravar resultado particionado por pickup_borough em: $m2OutputPath")
+    m2Df.write()
+        .mode(SaveMode.Overwrite)
+        .partitionBy("pickup_borough")
+        .parquet(m2OutputPath)
+
+    return m2Df
+}
+
+/**
+ * M3 - Zone-Level Statistics:
+ * Para cada zona de recolha e mês, calcula média e desvio padrão de fare_amount e trip_distance.
+ * Usa funções de janela (Window functions) para:
+ * 1. Classificar (rank) zonas por volume mensal de viagens dentro de cada borough.
+ * 2. Calcular a quota móvel de 3 meses de viagens de cada zona dentro do seu borough.
+ * 3. Sinalizar (flag) zonas cujo volume no mês corrente desvia da sua própria média móvel em mais de 1.5 desvios padrão.
+ */
+fun runM3ZoneLevelStatistics(
+    dfClean: Dataset<Row>,
+    zonesDf: Dataset<Row>
+): Dataset<Row> {
+    println("\n--- [M3] Estatísticas ao Nível da Zona ---")
+
+    val zonesPickup = zonesDf.select(
+        sf.col("LocationID").alias("PULocationID"),
+        sf.col("Borough").alias("pickup_borough"),
+        sf.col("Zone").alias("pickup_zone")
+    )
+
+    val monthlyZoneStats = dfClean
+        .join(zonesPickup, "PULocationID")
+        .withColumn("year_month", sf.date_format(sf.col("tpep_pickup_datetime"), "yyyy-MM"))
+        .groupBy("PULocationID", "pickup_borough", "pickup_zone", "year_month")
+        .agg(
+            sf.count("*").alias("monthly_trip_volume"),
+            sf.avg("fare_amount").alias("mean_fare_amount"),
+            sf.stddev("fare_amount").alias("stddev_fare_amount"),
+            sf.avg("trip_distance").alias("mean_trip_distance"),
+            sf.stddev("trip_distance").alias("stddev_trip_distance")
+        )
+
+    val wBoroughMonthRank = Window
+        .partitionBy("pickup_borough", "year_month")
+        .orderBy(sf.col("monthly_trip_volume").desc())
+
+    val wBoroughMonthTotal = Window
+        .partitionBy("pickup_borough", "year_month")
+
+    val wZoneRolling3M = Window
+        .partitionBy("PULocationID")
+        .orderBy("year_month")
+        .rowsBetween(-2, 0)
+
+    val m3Df = monthlyZoneStats
+        .withColumn("borough_volume_rank", sf.rank().over(wBoroughMonthRank))
+        .withColumn("borough_monthly_volume", sf.sum("monthly_trip_volume").over(wBoroughMonthTotal))
+        .withColumn(
+            "monthly_trip_share",
+            sf.`when`(
+                sf.col("borough_monthly_volume").gt(0),
+                sf.col("monthly_trip_volume").divide(sf.col("borough_monthly_volume"))
+            ).otherwise(0.0)
+        )
+        .withColumn("rolling_3m_trip_share", sf.avg("monthly_trip_share").over(wZoneRolling3M))
+        .withColumn("rolling_mean_volume", sf.avg("monthly_trip_volume").over(wZoneRolling3M))
+        .withColumn("rolling_stddev_volume", sf.stddev("monthly_trip_volume").over(wZoneRolling3M))
+        .withColumn(
+            "volume_deviation_flag",
+            sf.coalesce(
+                sf.abs(sf.col("monthly_trip_volume").minus(sf.col("rolling_mean_volume")))
+                    .gt(sf.col("rolling_stddev_volume").multiply(1.5)),
+                sf.lit(false)
+            )
+        )
+        .drop("borough_monthly_volume", "monthly_trip_share")
+        .orderBy(sf.col("year_month"), sf.col("pickup_borough"), sf.col("borough_volume_rank"))
+
+    m3Df.show(20, false)
+
+    val flaggedCount = m3Df.filter(sf.col("volume_deviation_flag").equalTo(true)).count()
+    println(String.format("[M3] Total de zonas-mês com desvio > 1.5 std: %,d", flaggedCount))
+
+    return m3Df
+}
+
 fun main(args: Array<String>) {
     val cliArgs = parseArgs(args)
 
@@ -226,13 +376,30 @@ fun main(args: Array<String>) {
 
     val startTimeNs = System.nanoTime()
 
+    val zonesDf = loadZoneLookup(spark, cliArgs.lookup)
+
     // Execução de M1
-    val dfClean = if (profiler != null) {
-        profiler.profile("M1_ingestion_and_cleaning") {
-            runM1IngestionAndCleaning(spark, cliArgs.data, sampleFraction = cliArgs.sample)
+    val dfClean = profiler?.profile("M1_ingestion_and_cleaning") {
+        runM1IngestionAndCleaning(spark, cliArgs.data, sampleFraction = cliArgs.sample)
+    }
+        ?: runM1IngestionAndCleaning(spark, cliArgs.data, sampleFraction = cliArgs.sample)
+
+    // Execução de M2
+    if (profiler != null) {
+        profiler.profile("M2_temporal_demand") {
+            runM2TemporalDemandAnalysis(dfClean, zonesDf, cliArgs.output)
         }
     } else {
-        runM1IngestionAndCleaning(spark, cliArgs.data, sampleFraction = cliArgs.sample)
+        runM2TemporalDemandAnalysis(dfClean, zonesDf, cliArgs.output)
+    }
+
+    // Execução de M3
+    if (profiler != null) {
+        profiler.profile("M3_zone_statistics") {
+            runM3ZoneLevelStatistics(dfClean, zonesDf)
+        }
+    } else {
+        runM3ZoneLevelStatistics(dfClean, zonesDf)
     }
 
     val elapsedSeconds = (System.nanoTime() - startTimeNs) / 1_000_000_000.0

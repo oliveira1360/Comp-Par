@@ -28,5 +28,6 @@ warehouse/
 
 # Local temporário e agentes
 .agents/
+.agents
 lab3/
 
