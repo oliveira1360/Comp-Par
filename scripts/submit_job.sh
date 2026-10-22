@@ -35,7 +35,7 @@ if [[ "$*" != *"--lookup"* ]]; then
 fi
 
 if [[ "$*" != *"--output"* ]]; then
-    DEFAULT_ARGS+=(--output "/data/output")
+    DEFAULT_ARGS+=(--output "/output")
 fi
 
 docker exec $TTY_FLAG spark-master /opt/spark/bin/spark-submit \

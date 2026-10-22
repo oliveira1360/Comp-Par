@@ -16,6 +16,14 @@ cd "$(dirname "$0")/.." || exit 1
 mkdir -p data
 
 BASE_URL="https://d37ci6vzurychx.cloudfront.net/trip-data"
+LOOKUP_URL="https://d37ci6vzurychx.cloudfront.net/misc/taxi_zone_lookup.csv"
+
+# Garante que a tabela de lookup das zonas está presente
+if [ ! -f "data/taxi_zone_lookup.csv" ]; then
+    echo " [↓] A descarregar taxi_zone_lookup.csv..."
+    curl -f -L -o "data/taxi_zone_lookup.csv" "$LOOKUP_URL"
+    echo " [✓] taxi_zone_lookup.csv descarregado."
+fi
 
 echo "=========================================================="
 echo " Descarregar Yellow Taxi Parquets para o ano $YEAR (Meses $START_MONTH a $END_MONTH)"

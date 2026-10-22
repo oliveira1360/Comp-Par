@@ -78,3 +78,12 @@ Também podes correr localmente fora do Docker usando o Gradle:
 ```bash
 ./scripts/stop_cluster.sh
 ```
+
+---
+
+## 📖 Guia Completo e Referência
+Consulta o documento detalhado [`docs/GUIA_WORKFLOW.md`](docs/GUIA_WORKFLOW.md) para:
+* Explicação detalhada de todas as opções de linha de comando (`--sample`, `--profile`, etc.).
+* Estrutura interna dos ficheiros Parquet em `output/`.
+* Guia de configuração passo a passo do Jupyter no IntelliJ IDEA.
+
