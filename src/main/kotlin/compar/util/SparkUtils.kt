@@ -7,6 +7,7 @@ import org.apache.spark.sql.functions as sf
 import org.apache.spark.sql.types.DataTypes
 import org.apache.spark.sql.types.StructField
 import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.types.Metadata
 
 object SparkUtils {
 
@@ -41,17 +42,17 @@ object SparkUtils {
      */
     fun getRawSchema(): StructType = StructType(
         arrayOf(
-            StructField.apply("tpep_pickup_datetime", DataTypes.TimestampType, true, org.apache.spark.sql.types.Metadata.empty()),
-            StructField.apply("tpep_dropoff_datetime", DataTypes.TimestampType, true, org.apache.spark.sql.types.Metadata.empty()),
-            StructField.apply("PULocationID", DataTypes.IntegerType, true, org.apache.spark.sql.types.Metadata.empty()),
-            StructField.apply("DOLocationID", DataTypes.IntegerType, true, org.apache.spark.sql.types.Metadata.empty()),
-            StructField.apply("passenger_count", DataTypes.DoubleType, true, org.apache.spark.sql.types.Metadata.empty()),
-            StructField.apply("trip_distance", DataTypes.DoubleType, true, org.apache.spark.sql.types.Metadata.empty()),
-            StructField.apply("RatecodeID", DataTypes.DoubleType, true, org.apache.spark.sql.types.Metadata.empty()),
-            StructField.apply("payment_type", DataTypes.LongType, true, org.apache.spark.sql.types.Metadata.empty()),
-            StructField.apply("fare_amount", DataTypes.DoubleType, true, org.apache.spark.sql.types.Metadata.empty()),
-            StructField.apply("tip_amount", DataTypes.DoubleType, true, org.apache.spark.sql.types.Metadata.empty()),
-            StructField.apply("total_amount", DataTypes.DoubleType, true, org.apache.spark.sql.types.Metadata.empty())
+            StructField.apply("tpep_pickup_datetime", DataTypes.TimestampType, true, Metadata.empty()),
+            StructField.apply("tpep_dropoff_datetime", DataTypes.TimestampType, true, Metadata.empty()),
+            StructField.apply("PULocationID", DataTypes.IntegerType, true, Metadata.empty()),
+            StructField.apply("DOLocationID", DataTypes.IntegerType, true, Metadata.empty()),
+            StructField.apply("passenger_count", DataTypes.DoubleType, true, Metadata.empty()),
+            StructField.apply("trip_distance", DataTypes.DoubleType, true, Metadata.empty()),
+            StructField.apply("RatecodeID", DataTypes.DoubleType, true, Metadata.empty()),
+            StructField.apply("payment_type", DataTypes.LongType, true, Metadata.empty()),
+            StructField.apply("fare_amount", DataTypes.DoubleType, true, Metadata.empty()),
+            StructField.apply("tip_amount", DataTypes.DoubleType, true, Metadata.empty()),
+            StructField.apply("total_amount", DataTypes.DoubleType, true, Metadata.empty())
         )
     )
 

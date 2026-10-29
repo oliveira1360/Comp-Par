@@ -1,5 +1,7 @@
 package compar.config
 
+import kotlin.system.exitProcess
+
 /**
  * Representa os argumentos da linha de comando para o pipeline de análise NYC Yellow Taxi.
  */
@@ -73,7 +75,7 @@ fun parseArgs(args: Array<String>): CliArgs {
                       --export-metrics <path> Caminho JSON para exportar métricas do profiler (default: output/profiling_report.json)
                     """.trimIndent()
                 )
-                kotlin.system.exitProcess(0)
+                exitProcess(0)
             }
             else -> {
                 System.err.println("Aviso: argumento desconhecido ignorado: ${args[i]}")

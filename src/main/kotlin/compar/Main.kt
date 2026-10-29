@@ -15,7 +15,6 @@ import org.apache.spark.sql.SparkSession
 fun main(args: Array<String>) {
     val cliArgs = parseArgs(args)
     val spark = SparkUtils.getSparkSession(masterUrl = cliArgs.master)
-
     try {
         printBanner(spark, cliArgs)
 
