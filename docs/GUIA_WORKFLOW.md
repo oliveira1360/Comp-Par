@@ -20,7 +20,7 @@ Quando executas:
   * **Em produção / entrega**: Remove esta flag para processar 100% dos dados.
 
 ### 2. `--profile` (Perfilagem de Performance / SparkProfiler)
-* **O que faz**: Ativa o [`SparkProfiler.kt`](../src/main/kotlin/compar/SparkProfiler.kt), que regista um *listener* interno no Spark para medir cada etapa da computação.
+* **O que faz**: Ativa o [`SparkProfiler.kt`](../src/main/kotlin/compar/profiler/SparkProfiler.kt), que regista um *listener* interno no Spark para medir cada etapa da computação.
 * **Métricas recolhidas e impressas na consola**:
   * **Duração de cada operação** (ex.: M1 Ingestão, M2 Procura Temporal, M3 Estatísticas de Zona).
   * **Volume de Shuffle**: Bytes e registos transferidos pela rede entre executores (`Shuffle Read/Write`).

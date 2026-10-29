@@ -8,7 +8,8 @@ Pipeline de análise distribuída em **Kotlin + Apache Spark** sobre os registos
 
 * `build.gradle.kts` / `settings.gradle.kts`: Configuração de build Gradle (Kotlin DSL, JDK 17, Spark 3.5.3).
 * `src/main/kotlin/compar/Main.kt`: Pipeline principal Spark em Kotlin executável via `spark-submit` ou `./gradlew run`.
-* `src/main/kotlin/compar/SparkProfiler.kt`: Utilitário em Kotlin para recolha de métricas de execução (tarefas, tempos, shuffles, spills) via REST API do Spark.
+* `src/main/kotlin/compar/processor/`: Interface `DataProcessor` e implementações analíticas (`AiGeneratedDataProcessor`).
+* `src/main/kotlin/compar/profiler/SparkProfiler.kt`: Utilitário em Kotlin para recolha de métricas de execução (tarefas, tempos, shuffles, spills, GC) via REST API do Spark.
 * `notebooks/exploration.ipynb`: Notebook Jupyter para exploração interativa de dados e prototipagem.
 * `docker/`: Configurações Docker (`Dockerfile` e `docker-compose.yml`) com Spark Master, Workers e JupyterLab.
 * `scripts/`: Scripts Bash para automação do cluster, compilação e submissão de jobs.

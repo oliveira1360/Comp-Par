@@ -7,6 +7,7 @@ data/
 # Gradle, Kotlin & IDEs
 .gradle/
 build/
+gradle.properties
 *.jar
 !gradle/wrapper/gradle-wrapper.jar
 __pycache__/
