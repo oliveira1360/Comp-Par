@@ -8,21 +8,93 @@ import compar.profiler.SparkProfiler
 import compar.util.SparkUtils
 import org.apache.spark.sql.Dataset
 import org.apache.spark.sql.Row
+import org.apache.spark.sql.SparkSession
 
 /**
  * Main.kt - Ponto de entrada do pipeline Spark em Kotlin para Análise dos Dados de NYC Yellow Taxi.
  * Computação Paralela (ComPar 26/27)
- *
- * Arquitetura desacoplada:
- * - Configuração CLI via `compar.config.parseArgs`
- * - Operações analíticas (M1, M2, M3, O1, O4) desacopladas através da interface `DataProcessor`
- * - Implementação Baseline gerada por IA (`AiGeneratedDataProcessor`)
- * - Perfilagem de alta fidelidade via `SparkProfiler`
  */
 fun main(args: Array<String>) {
     val cliArgs = parseArgs(args)
-
     val spark = SparkUtils.getSparkSession(masterUrl = cliArgs.master)
+
+    try {
+        printBanner(spark, cliArgs)
+
+        val profiler = if (cliArgs.profile) SparkProfiler(spark) else null
+        val runner = PipelineRunner(
+            spark = spark,
+            cliArgs = cliArgs,
+            processor = AiGeneratedDataProcessor(),
+            profiler = profiler
+        )
+
+        val startTimeNs = System.nanoTime()
+        runner.run()
+        val elapsedSeconds = (System.nanoTime() - startTimeNs) / 1_000_000_000.0
+        println(String.format("\nTempo total decorrido do pipeline: %.2fs", elapsedSeconds))
+
+        printAndExportReport(profiler, cliArgs.exportMetricsPath)
+    } finally {
+        spark.stop()
+        println("\nSessão Spark terminada com sucesso.")
+    }
+}
+
+/**
+ * Responsável pela orquestração e execução com profiling das operações solicitadas.
+ */
+class PipelineRunner(
+    private val spark: SparkSession,
+    private val cliArgs: CliArgs,
+    private val processor: DataProcessor,
+    private val profiler: SparkProfiler?
+) {
+    private var dfClean: Dataset<Row>? = null
+    private val zonesDf by lazy { SparkUtils.loadZoneLookup(spark, cliArgs.lookup) }
+
+    fun run() {
+        for (op in cliArgs.operations) {
+            executeOperation(op)
+        }
+    }
+
+    private fun executeOperation(op: String) {
+        when (op) {
+            "M1" -> getCleanData()
+            "M2" -> runOp("M2_temporal_demand") {
+                processor.runM2TemporalDemandAnalysis(getCleanData(), zonesDf, cliArgs.output)
+            }
+            "M3" -> runOp("M3_zone_statistics") {
+                processor.runM3ZoneLevelStatistics(getCleanData(), zonesDf)
+            }
+            "O1" -> runOp("O1_fare_anomaly_detection") {
+                processor.runO1FareAnomalyDetection(getCleanData(), zonesDf)
+            }
+            "O4" -> runOp("O4_trip_type_classification") {
+                processor.runO4TripTypeClassification(getCleanData())
+            }
+            else -> System.err.println("Aviso: operação '$op' desconhecida.")
+        }
+    }
+
+    private fun getCleanData(): Dataset<Row> {
+        if (dfClean == null) {
+            dfClean = runOp("M1_ingestion_and_cleaning") {
+                processor.runM1IngestionAndCleaning(spark, cliArgs.data, sampleFraction = cliArgs.sample)
+            }
+        }
+        return dfClean!!
+    }
+
+    private fun <T> runOp(name: String, block: () -> T): T =
+        profiler?.profile(name, block) ?: block()
+}
+
+/**
+ * Apresenta o cabeçalho informativo com as configurações de execução.
+ */
+private fun printBanner(spark: SparkSession, cliArgs: CliArgs) {
     println("================================================================================")
     println("  NYC TLC Yellow Taxi Analytics Pipeline (ComPar 26/27)")
     println("================================================================================")
@@ -35,102 +107,28 @@ fun main(args: Array<String>) {
     println("Operações selecionadas: ${cliArgs.operations.joinToString(", ")}")
     println("Ficheiro de dados: ${cliArgs.data}")
     println("================================================================================\n")
+}
 
-    val profiler = if (cliArgs.profile) SparkProfiler(spark) else null
-    val processor: DataProcessor = AiGeneratedDataProcessor()
+/**
+ * Imprime a tabela de métricas e exporta os resultados do profiler em formato JSON.
+ */
+private fun printAndExportReport(profiler: SparkProfiler?, exportPath: String?) {
+    if (profiler == null) return
 
-    val startTimeNs = System.nanoTime()
-
-    // Carregamento da tabela dimensional de zonas (lookup)
-    val zonesDf = SparkUtils.loadZoneLookup(spark, cliArgs.lookup)
-
-    // Variável para armazenar o DataFrame limpo resultante de M1
-    var dfClean: Dataset<Row>? = null
-
-    // 1. M1 — Ingestão e Limpeza de Dados
-    if ("M1" in cliArgs.operations) {
-        dfClean = if (profiler != null) {
-            profiler.profile("M1_ingestion_and_cleaning") {
-                processor.runM1IngestionAndCleaning(spark, cliArgs.data, sampleFraction = cliArgs.sample)
-            }
-        } else {
-            processor.runM1IngestionAndCleaning(spark, cliArgs.data, sampleFraction = cliArgs.sample)
-        }
+    println("\n================================================================================")
+    println("  Relatório de Desempenho (SparkProfiler)")
+    println("================================================================================")
+    try {
+        println(profiler.report())
+    } catch (e: Exception) {
+        println("Não foi possível gerar tabela de profiling: ${e.message}")
     }
 
-    // Se M1 não foi executado na lista de operações, lemos os dados diretamente para as operações seguintes
-    if (dfClean == null) {
-        println("[Aviso] M1 não selecionado. A carregar dados brutos diretamente para suportar as restantes etapas...")
-        dfClean = processor.runM1IngestionAndCleaning(spark, cliArgs.data, sampleFraction = cliArgs.sample)
-    }
-
-    // 2. M2 — Análise de Procura Temporal
-    if ("M2" in cliArgs.operations) {
-        if (profiler != null) {
-            profiler.profile("M2_temporal_demand") {
-                processor.runM2TemporalDemandAnalysis(dfClean, zonesDf, cliArgs.output)
-            }
-        } else {
-            processor.runM2TemporalDemandAnalysis(dfClean, zonesDf, cliArgs.output)
-        }
-    }
-
-    // 3. M3 — Estatísticas ao Nível da Zona
-    if ("M3" in cliArgs.operations) {
-        if (profiler != null) {
-            profiler.profile("M3_zone_statistics") {
-                processor.runM3ZoneLevelStatistics(dfClean, zonesDf)
-            }
-        } else {
-            processor.runM3ZoneLevelStatistics(dfClean, zonesDf)
-        }
-    }
-
-    // 4. O1 — Deteção de Anomalias de Tarifa (Opcional)
-    if ("O1" in cliArgs.operations) {
-        if (profiler != null) {
-            profiler.profile("O1_fare_anomaly_detection") {
-                processor.runO1FareAnomalyDetection(dfClean, zonesDf)
-            }
-        } else {
-            processor.runO1FareAnomalyDetection(dfClean, zonesDf)
-        }
-    }
-
-    // 5. O4 — Classificação de Tipo de Viagem (Opcional)
-    if ("O4" in cliArgs.operations) {
-        if (profiler != null) {
-            profiler.profile("O4_trip_type_classification") {
-                processor.runO4TripTypeClassification(dfClean)
-            }
-        } else {
-            processor.runO4TripTypeClassification(dfClean)
-        }
-    }
-
-    val elapsedSeconds = (System.nanoTime() - startTimeNs) / 1_000_000_000.0
-    println(String.format("\nTempo total decorrido do pipeline: %.2fs", elapsedSeconds))
-
-    // Apresentação e exportação do relatório de profiling
-    if (profiler != null) {
-        println("\n================================================================================")
-        println("  Relatório de Desempenho (SparkProfiler)")
-        println("================================================================================")
+    if (!exportPath.isNullOrBlank()) {
         try {
-            println(profiler.report())
+            profiler.exportJson(exportPath)
         } catch (e: Exception) {
-            println("Não foi possível gerar tabela de profiling: ${e.message}")
-        }
-
-        if (!cliArgs.exportMetricsPath.isNullOrBlank()) {
-            try {
-                profiler.exportJson(cliArgs.exportMetricsPath)
-            } catch (e: Exception) {
-                System.err.println("Erro ao exportar métricas JSON: ${e.message}")
-            }
+            System.err.println("Erro ao exportar métricas JSON: ${e.message}")
         }
     }
-
-    spark.stop()
-    println("\nSessão Spark terminada com sucesso.")
 }
