@@ -1,75 +1,65 @@
 package compar.runner
 
 import compar.config.CliArgs
-import compar.processor.DataProcessor
+import compar.ops.AnalysisInput
+import compar.ops.Op
+import compar.ops.Registry
+import compar.ops.Source
+import compar.ops.Step
 import compar.profiler.SparkProfiler
 import compar.util.SparkUtils
-import org.apache.spark.sql.Dataset
-import org.apache.spark.sql.Row
 import org.apache.spark.sql.SparkSession
 
 /**
- * PipelineRunner é responsável por orquestrar a execução das operações analíticas (M1-M3, O1, O4),
- * gerir o ciclo de vida dos DataFrames em memória (dfClean, zonesDf) e aplicar profiling
- * de forma transparente a cada etapa solicitada.
+ * PipelineRunner é responsável por orquestrar a execução das operações analíticas (M1-M3, O1, O4):
+ * resolve no Registry a versão pedida de cada operação, executa o M1 uma única vez
+ * e aplica profiling de forma transparente a cada etapa.
  */
 class PipelineRunner(
     private val spark: SparkSession,
     private val cliArgs: CliArgs,
-    private val processor: DataProcessor,
     private val profiler: SparkProfiler?
 ) {
-    // Cache local dos dados limpos de M1; apenas computado na primeira vez que for necessário
-    private var dfClean: Dataset<Row>? = null
-
-    // Tabela dimensional de zonas; carregada preguiçosamente apenas se uma operação precisar dela
-    private val zonesDf by lazy { SparkUtils.loadZoneLookup(spark, cliArgs.lookup) }
-
     /**
-     * Executa em sequência as operações especificadas em cliArgs.operations.
+     * Executa o M1 e, em sequência, as análises especificadas em cliArgs.operations.
+     * O M1 corre sempre, pois todas as análises dependem dos dados limpos.
      */
     fun run() {
-        for (op in cliArgs.operations) {
-            executeOperation(op)
+        val ingestion = Registry.ingestion(versionOf(Op.M1))
+        val analyses = cliArgs.operations
+            .filter { it != Op.M1 }
+            .map { Registry.analysis(it, versionOf(it)) }
+
+        val trips = profiled(ingestion) {
+            ingestion.load(spark, Source(cliArgs.data, cliArgs.sample))
         }
+        if (analyses.isEmpty()) return
+
+        // Valida as colunas pedidas por cada análise antes de executar qualquer uma delas
+        val available = trips.columns().toSet()
+        analyses.forEach { analysis ->
+            val missing = analysis.requiredColumns - available
+            require(missing.isEmpty()) {
+                "${analysis.info.label} precisa das colunas $missing, que ${ingestion.info.label} não produz"
+            }
+        }
+
+        val input = AnalysisInput(
+            spark = spark,
+            trips = trips,
+            zones = SparkUtils.loadZoneLookup(spark, cliArgs.lookup),
+            outputDir = cliArgs.output
+        )
+        analyses.forEach { analysis -> profiled(analysis) { analysis.run(input) } }
     }
 
-    private fun executeOperation(op: String) {
-        when (op) {
-            "M1" -> getCleanData()
-            "M2" -> runOp("M2_temporal_demand") {
-                processor.runM2TemporalDemandAnalysis(getCleanData(), zonesDf, cliArgs.output)
-            }
-            "M3" -> runOp("M3_zone_statistics") {
-                processor.runM3ZoneLevelStatistics(getCleanData(), zonesDf)
-            }
-            "O1" -> runOp("O1_fare_anomaly_detection") {
-                processor.runO1FareAnomalyDetection(getCleanData(), zonesDf)
-            }
-            "O4" -> runOp("O4_trip_type_classification") {
-                processor.runO4TripTypeClassification(getCleanData())
-            }
-            else -> System.err.println("Aviso: operação '$op' desconhecida.")
-        }
-    }
-
-    /**
-     * Obtém os dados limpos de M1. Se M1 ainda não tiver sido executado,
-     * executa-o automaticamente para garantir a integridade das operações seguintes.
-     */
-    private fun getCleanData(): Dataset<Row> {
-        if (dfClean == null) {
-            dfClean = runOp("M1_ingestion_and_cleaning") {
-                processor.runM1IngestionAndCleaning(spark, cliArgs.data, sampleFraction = cliArgs.sample)
-            }
-        }
-        return dfClean!!
-    }
+    /** Versão pedida para a operação; null significa a mais recente. */
+    private fun versionOf(op: Op): Int? = cliArgs.versions[op] ?: cliArgs.defaultVersion
 
     /**
      * Executa um bloco de código com profiling se o profiler estiver ativo,
      * ou diretamente caso contrário.
      */
-    private fun <T> runOp(name: String, block: () -> T): T =
-        profiler?.profile(name, block) ?: block()
+    private fun <T> profiled(step: Step, block: () -> T): T =
+        profiler?.profile(step.info.label, block) ?: block()
 }
