@@ -8,7 +8,7 @@ Pipeline de análise distribuída em **Kotlin + Apache Spark** sobre os registos
 
 * `build.gradle.kts` / `settings.gradle.kts`: Configuração de build Gradle (Kotlin DSL, JDK 17, Spark 3.5.3).
 * `src/main/kotlin/compar/Main.kt`: Pipeline principal Spark em Kotlin executável via `spark-submit` ou `./gradlew run`.
-* `src/main/kotlin/compar/ops/`: Operações versionadas. `Step.kt` define os contratos (`Ingestion` para o M1, `Analysis` para M2–O4), `Registry.kt` cataloga as versões e cada operação tem o seu package (`m1/`, `m2/`, `m3/`, `o1/`, `o4/`) com uma classe por versão (`V0Baseline` = baseline gerado por IA; cada versão N parte da N-1).
+* `src/main/kotlin/compar/ops/`: Operações versionadas. `Contracts.kt` define as interfaces (`DataLoader` para o M1, `Analysis` para M2–O4) e cada operação tem o seu package (`m1/`, `m2/`, `m3/`, `o1/`, `o4/`) com uma classe por versão (`V0Baseline` = baseline gerado por IA; cada versão N parte da N-1).
 * `src/main/kotlin/compar/profiler/SparkProfiler.kt`: Utilitário em Kotlin para recolha de métricas de execução (tarefas, tempos, shuffles, spills, GC) via REST API do Spark.
 * `notebooks/exploration.ipynb`: Notebook Jupyter para exploração interativa de dados e prototipagem.
 * `docker/`: Configurações Docker (`Dockerfile` e `docker-compose.yml`) com Spark Master, Workers e JupyterLab.
@@ -76,21 +76,14 @@ Também podes correr localmente fora do Docker usando o Gradle:
 ```
 
 #### Escolher versões das operações
-Por defeito cada operação corre na sua versão mais recente. Com `--versions` escolhe-se a versão por operação (`ALL=N` aplica-se às restantes):
+As versões usadas são escolhidas em `Main.kt`, onde são injetadas no `PipelineRunner`. Para mudar de versão, troca a classe e volta a correr (o `submit_job.sh` e o `benchmark.sh` recompilam o JAR):
 
-```bash
-# Listar todas as versões registadas (bottleneck e alteração de cada uma):
-./gradlew run --args="--list-versions"
-
-# Baseline completo (todas as operações na v0):
-./scripts/submit_job.sh --profile --versions ALL=0
-
-# Medir uma otimização isolada (antes/depois), com o M1 fixo:
-./scripts/submit_job.sh --profile --ops M1,O1 --versions M1=0,O1=0
-./scripts/submit_job.sh --profile --ops M1,O1 --versions M1=0,O1=1
+```kotlin
+m1 = M1V0Baseline(),
+o1 = O1V1(),   // antes: O1V0Baseline()
 ```
 
-Para adicionar uma versão: copiar a versão anterior da operação para uma classe nova (ex: `ops/o1/O1V1AggBroadcast.kt`), preencher o `VersionInfo` com o bottleneck e a alteração, e acrescentá-la no fim da lista respetiva em `Registry.kt`.
+Para adicionar uma versão: copiar a versão anterior da operação para uma classe nova (ex: `ops/o1/O1V2.kt`), documentar no KDoc o bottleneck e a alteração, e injetá-la em `Main.kt`.
 
 ### 6. Parar o Cluster
 ```bash

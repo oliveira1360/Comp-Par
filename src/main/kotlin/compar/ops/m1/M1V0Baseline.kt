@@ -1,9 +1,6 @@
 package compar.ops.m1
 
-import compar.ops.Ingestion
-import compar.ops.Op
-import compar.ops.Source
-import compar.ops.VersionInfo
+import compar.ops.DataLoader
 import org.apache.spark.sql.Dataset
 import org.apache.spark.sql.Row
 import org.apache.spark.sql.SparkSession
@@ -11,24 +8,23 @@ import org.apache.spark.sql.functions as sf
 import org.apache.spark.sql.types.DataTypes
 
 /**
- * M1 — Ingestão e Limpeza de Dados:
- * 1. Carrega os Parquets de viagens com cast explícito de tipos.
- * 2. Aplica amostragem se sampleFraction for fornecido.
- * 3. Identifica e contabiliza registos inválidos segundo as 5 regras do enunciado:
+ * M1 — Data Ingestion and Cleaning:
+ * 1. Loads the trip Parquet files with explicit type casts.
+ * 2. Applies sampling if sampleFraction is provided.
+ * 3. Identifies and counts invalid records according to the 5 rules of the assignment:
  *    - fare_amount <= 0
  *    - trip_distance <= 0
- *    - passenger_count == 0 ou > 6 (ou nulo)
- *    - dropoff <= pickup (ou nulos)
- *    - PULocationID ou DOLocationID fora de [1, 263]
- * 4. Reporta estatísticas de limpeza por ano.
- * 5. Retorna o DataFrame limpo.
+ *    - passenger_count == 0 or > 6 (or null)
+ *    - dropoff <= pickup (or nulls)
+ *    - PULocationID or DOLocationID outside [1, 263]
+ * 4. Reports cleaning statistics per year.
+ * 5. Returns the cleaned DataFrame.
  */
-class M1V0Baseline : Ingestion {
-    override val info = VersionInfo(Op.M1, 0, change = "Baseline gerado por IA")
+class M1V0Baseline : DataLoader {
 
-    override fun load(spark: SparkSession, source: Source): Dataset<Row> {
-        println("\n[${info.label}] A carregar dados de: ${source.dataPath}")
-        val dfRaw = spark.read().parquet(source.dataPath)
+    override fun load(spark: SparkSession, dataPath: String, sampleFraction: Double?): Dataset<Row> {
+        println("\n[M1] A carregar dados de: $dataPath")
+        val dfRaw = spark.read().parquet(dataPath)
 
         var df = dfRaw
             .withColumn("tpep_pickup_datetime", sf.col("tpep_pickup_datetime").cast(DataTypes.TimestampType))
@@ -40,7 +36,6 @@ class M1V0Baseline : Ingestion {
             .withColumn("DOLocationID", sf.col("DOLocationID").cast(DataTypes.IntegerType))
             .withColumn("year", sf.year(sf.col("tpep_pickup_datetime")))
 
-        val sampleFraction = source.sampleFraction
         if (sampleFraction != null && sampleFraction > 0.0 && sampleFraction < 1.0) {
             println(String.format("[M1] A aplicar amostragem de %.1f%%", sampleFraction * 100.0))
             df = df.sample(sampleFraction, 42L)
@@ -49,7 +44,7 @@ class M1V0Baseline : Ingestion {
         val totalRecords = df.count()
         println(String.format("[M1] Total de registos lidos: %,d", totalRecords))
 
-        // Definição dos critérios de invalidade (M1)
+        // Invalidity criteria (M1)
         val condInvalidFare = sf.col("fare_amount").leq(0).or(sf.col("fare_amount").isNull)
         val condInvalidDistance = sf.col("trip_distance").leq(0).or(sf.col("trip_distance").isNull)
         val condInvalidPassenger = sf.col("passenger_count").leq(0)
@@ -63,7 +58,7 @@ class M1V0Baseline : Ingestion {
             .or(sf.col("PULocationID").isNull)
             .or(sf.col("DOLocationID").isNull)
 
-        // Adicionar colunas indicadoras (0/1) para contabilização por critério
+        // Add indicator columns (0/1) to count records per criterion
         val dfFlagged = df
             .withColumn("rem_fare", sf.`when`(condInvalidFare, 1).otherwise(0))
             .withColumn("rem_distance", sf.`when`(condInvalidDistance, 1).otherwise(0))
@@ -71,7 +66,7 @@ class M1V0Baseline : Ingestion {
             .withColumn("rem_time", sf.`when`(condInvalidTime, 1).otherwise(0))
             .withColumn("rem_location", sf.`when`(condInvalidLocation, 1).otherwise(0))
 
-        // Estatísticas por ano de remoção por critério (requisito M1)
+        // Per-year removal statistics per criterion (M1 requirement)
         println("\n--- [M1] Estatísticas de Limpeza por Ano (Registos Removidos) ---")
         val cleaningStats = dfFlagged
             .groupBy("year")
@@ -87,7 +82,7 @@ class M1V0Baseline : Ingestion {
 
         cleaningStats.show(false)
 
-        // Filtrar o DataFrame apenas com os registos estritamente válidos
+        // Keep only the strictly valid records
         val condValidAll = sf.not(condInvalidFare)
             .and(sf.not(condInvalidDistance))
             .and(sf.not(condInvalidPassenger))

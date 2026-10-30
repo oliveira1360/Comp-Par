@@ -19,14 +19,14 @@ val scalaBinaryVersion = "2.12"
 val sparkRunner by configurations.creating
 
 dependencies {
-    // Kotlin Standard Library (incluída no JAR final para correr nos workers do Spark)
+    // Kotlin Standard Library (included in the final JAR to run on the Spark workers)
     implementation(kotlin("stdlib"))
 
-    // Apache Spark Core & SQL (fornecidos pelo runtime do spark-submit no cluster)
+    // Apache Spark Core & SQL (provided by the spark-submit runtime on the cluster)
     compileOnly("org.apache.spark:spark-core_$scalaBinaryVersion:$sparkVersion")
     compileOnly("org.apache.spark:spark-sql_$scalaBinaryVersion:$sparkVersion")
 
-    // Classpath completo (incluindo dependências de runtime como parquet-jackson) para `./gradlew run` local
+    // Full classpath (including runtime dependencies such as parquet-jackson) for local `./gradlew run`
     sparkRunner("org.apache.spark:spark-core_$scalaBinaryVersion:$sparkVersion")
     sparkRunner("org.apache.spark:spark-sql_$scalaBinaryVersion:$sparkVersion")
 }
@@ -39,7 +39,7 @@ application {
     mainClass.set("compar.MainKt")
 }
 
-// Permite correr localmente com `./gradlew run --args="--master local[*] ..."` incluindo as libs de runtime do Spark
+// Allows running locally with `./gradlew run --args="--master local[*] ..."`, including the Spark runtime libs
 tasks.named<JavaExec>("run") {
     classpath += sparkRunner
     jvmArgs(
@@ -59,7 +59,7 @@ tasks.named<JavaExec>("run") {
     )
 }
 
-// Empacota apenas o nosso código + kotlin-stdlib num JAR pronto para `spark-submit`
+// Packages only our code + kotlin-stdlib into a JAR ready for `spark-submit`
 tasks.named<Jar>("jar") {
     archiveBaseName.set("nyc-taxi-analytics")
     archiveVersion.set("")

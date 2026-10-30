@@ -12,7 +12,7 @@ import org.apache.spark.sql.types.Metadata
 object SparkUtils {
 
     /**
-     * Cria ou obtém a SparkSession configurada para execução local ou no cluster.
+     * Creates or gets the SparkSession configured for local or cluster execution.
      */
     fun getSparkSession(
         masterUrl: String? = null,
@@ -23,7 +23,7 @@ object SparkUtils {
             builder = builder.master(masterUrl)
         }
 
-        // Configurações de memória e otimizações recomendadas
+        // Memory settings and recommended optimizations
         builder = builder
             .config("spark.driver.memory", "1536m")
             .config("spark.executor.memory", "1024m")
@@ -31,14 +31,14 @@ object SparkUtils {
             .config("spark.sql.adaptive.enabled", "true")
 
         val spark = builder.getOrCreate()
-        // Define o log level para WARN para manter a consola limpa e legível
+        // Set the log level to WARN to keep the console clean and readable
         spark.sparkContext().setLogLevel("WARN")
         return spark
     }
 
     /**
-     * Define o esquema explícito para os dados do TLC Yellow Taxi.
-     * Evita a necessidade de inferSchema e garante tipos consistentes.
+     * Defines the explicit schema for the TLC Yellow Taxi data.
+     * Avoids the need for inferSchema and guarantees consistent types.
      */
     fun getRawSchema(): StructType = StructType(
         arrayOf(
@@ -57,7 +57,7 @@ object SparkUtils {
     )
 
     /**
-     * Carrega a tabela de lookup de zonas (taxi_zone_lookup.csv).
+     * Loads the zone lookup table (taxi_zone_lookup.csv).
      */
     fun loadZoneLookup(spark: SparkSession, lookupPath: String): Dataset<Row> {
         println("\n[Zones] A carregar tabela de zonas de: $lookupPath")

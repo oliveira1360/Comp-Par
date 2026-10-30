@@ -2,23 +2,22 @@ package compar
 
 import compar.config.CliArgs
 import compar.config.parseArgs
-import compar.ops.Registry
+import compar.ops.m1.M1V0Baseline
+import compar.ops.m2.M2V0Baseline
+import compar.ops.m3.M3V0Baseline
+import compar.ops.o1.O1V0Baseline
+import compar.ops.o4.O4V0Baseline
 import compar.profiler.SparkProfiler
 import compar.runner.PipelineRunner
 import compar.util.SparkUtils
 import org.apache.spark.sql.SparkSession
 
 /**
- * Main.kt - Ponto de entrada do pipeline Spark em Kotlin para Análise dos Dados de NYC Yellow Taxi.
- * Computação Paralela (ComPar 26/27)
+ * Main.kt - Entry point of the Kotlin Spark pipeline for NYC Yellow Taxi data analysis.
+ * Parallel Computing (ComPar 26/27)
  */
 fun main(args: Array<String>) {
     val cliArgs = parseArgs(args)
-    if (cliArgs.listVersions) {
-        printVersionTable()
-        return
-    }
-
     val spark = SparkUtils.getSparkSession(masterUrl = cliArgs.master)
     try {
         printBanner(spark, cliArgs)
@@ -27,7 +26,12 @@ fun main(args: Array<String>) {
         val runner = PipelineRunner(
             spark = spark,
             cliArgs = cliArgs,
-            profiler = profiler
+            profiler = profiler,
+            m1 = M1V0Baseline(),
+            m2 = M2V0Baseline(),
+            m3 = M3V0Baseline(),
+            o1 = O1V0Baseline(),
+            o4 = O4V0Baseline()
         )
 
         val startTimeNs = System.nanoTime()
@@ -43,7 +47,7 @@ fun main(args: Array<String>) {
 }
 
 /**
- * Apresenta o cabeçalho informativo com as configurações de execução.
+ * Prints the header with the run configuration.
  */
 private fun printBanner(spark: SparkSession, cliArgs: CliArgs) {
     println("================================================================================")
@@ -56,27 +60,12 @@ private fun printBanner(spark: SparkSession, cliArgs: CliArgs) {
         println("Spark Web UI: ${uiWebUrl.get()}")
     }
     println("Operações selecionadas: ${cliArgs.operations.joinToString(", ")}")
-    val requested = cliArgs.versions.entries.joinToString(", ") { "${it.key}=v${it.value}" }
-    val fallback = cliArgs.defaultVersion?.let { "v$it" } ?: "mais recente"
-    println("Versões: ${requested.ifEmpty { "-" }} (restantes: $fallback)")
     println("Ficheiro de dados: ${cliArgs.data}")
     println("================================================================================\n")
 }
 
 /**
- * Lista todas as versões registadas, com o bottleneck e a alteração de cada uma.
- */
-private fun printVersionTable() {
-    println(String.format("%-4s %-4s %-60s %s", "Op", "Ver", "Bottleneck (versão anterior)", "Alteração"))
-    println(String.format("%-4s %-4s %-60s %s", "--", "---", "-".repeat(28), "-".repeat(9)))
-    for (step in Registry.all()) {
-        val info = step.info
-        println(String.format("%-4s %-4d %-60s %s", info.op, info.version, info.bottleneck, info.change))
-    }
-}
-
-/**
- * Imprime a tabela de métricas e exporta os resultados do profiler em formato JSON.
+ * Prints the metrics table and exports the profiler results as JSON.
  */
 private fun printAndExportReport(profiler: SparkProfiler?, exportPath: String?) {
     if (profiler == null) return

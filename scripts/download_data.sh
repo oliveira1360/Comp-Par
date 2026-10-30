@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Descarrega ficheiros Parquet mensais dos táxis de NYC (TLC Yellow Taxi) para a diretoria data/
+# Downloads monthly NYC taxi Parquet files (TLC Yellow Taxi) to the data/ directory
 #
-# Uso:
-#   ./scripts/download_data.sh [ANO] [MES_INICIAL] [MES_FINAL]
-# Exemplo:
-#   ./scripts/download_data.sh 2024 2 3   # Descarrega Fevereiro e Março de 2024
+# Usage:
+#   ./scripts/download_data.sh [YEAR] [START_MONTH] [END_MONTH]
+# Example:
+#   ./scripts/download_data.sh 2024 2 3   # Downloads February and March 2024
 
 set -e
 
@@ -18,7 +18,7 @@ mkdir -p data
 BASE_URL="https://d37ci6vzurychx.cloudfront.net/trip-data"
 LOOKUP_URL="https://d37ci6vzurychx.cloudfront.net/misc/taxi_zone_lookup.csv"
 
-# Garante que a tabela de lookup das zonas está presente
+# Ensures the zone lookup table is present
 if [ ! -f "data/taxi_zone_lookup.csv" ]; then
     echo " [↓] A descarregar taxi_zone_lookup.csv..."
     curl -f -L -o "data/taxi_zone_lookup.csv" "$LOOKUP_URL"

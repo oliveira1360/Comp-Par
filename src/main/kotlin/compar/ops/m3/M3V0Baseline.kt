@@ -2,26 +2,23 @@ package compar.ops.m3
 
 import compar.ops.Analysis
 import compar.ops.AnalysisInput
-import compar.ops.Op
-import compar.ops.VersionInfo
 import org.apache.spark.sql.Dataset
 import org.apache.spark.sql.Row
 import org.apache.spark.sql.expressions.Window
 import org.apache.spark.sql.functions as sf
 
 /**
- * M3 — Estatísticas ao Nível da Zona:
- * Para cada zona de recolha e mês, calcula média e desvio padrão de fare_amount e trip_distance.
- * Usa funções de janela (Window functions) para:
- * 1. Classificar (rank) zonas por volume mensal de viagens dentro de cada borough.
- * 2. Calcular a quota móvel de 3 meses de viagens de cada zona dentro do seu borough.
- * 3. Sinalizar (flag) zonas cujo volume no mês corrente desvia da sua própria média móvel em mais de 1.5 desvios padrão.
+ * M3 — Zone-Level Statistics:
+ * For each pickup zone and month, computes the mean and standard deviation of fare_amount and trip_distance.
+ * Uses window functions to:
+ * 1. Rank zones by monthly trip volume within each borough.
+ * 2. Compute each zone's rolling 3-month trip share within its borough.
+ * 3. Flag zones whose current-month volume deviates from their own rolling mean by more than 1.5 standard deviations.
  */
 class M3V0Baseline : Analysis {
-    override val info = VersionInfo(Op.M3, 0, change = "Baseline gerado por IA")
 
     override fun run(input: AnalysisInput): Dataset<Row> {
-        println("\n--- [${info.label}] Estatísticas ao Nível da Zona ---")
+        println("\n--- [M3] Estatísticas ao Nível da Zona ---")
 
         val zonesPickup = input.zones.select(
             sf.col("LocationID").alias("PULocationID"),

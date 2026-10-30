@@ -2,34 +2,31 @@ package compar.ops.o4
 
 import compar.ops.Analysis
 import compar.ops.AnalysisInput
-import compar.ops.Op
-import compar.ops.VersionInfo
 import org.apache.spark.sql.Dataset
 import org.apache.spark.sql.Row
 import org.apache.spark.sql.functions as sf
 
 /**
- * O4 — Classificação de Tipo de Viagem (Trip-Type Classification):
- * 1. Calcula frações de aeroporto, negociadas e em grupo por bucket (PULocationID, hour_of_day).
- * 2. Classifica cada bucket em 'residential', 'commercial', 'transit' ou 'mixed'.
- * 3. Junta a classificação de volta à tabela completa de viagens.
- * 4. Calcula estatísticas de tarifa e distância por tipo de zona e por mês.
+ * O4 — Trip-Type Classification:
+ * 1. Computes the airport, negotiated and group trip fractions per (PULocationID, hour_of_day) bucket.
+ * 2. Classifies each bucket as 'residential', 'commercial', 'transit' or 'mixed'.
+ * 3. Joins the classification back to the full trip table.
+ * 4. Computes fare and distance statistics per zone type and month.
  */
 class O4V0Baseline(
     private val airportThreshold: Double = 0.10,
     private val groupThreshold: Double = 0.08,
     private val commercialMaxGroup: Double = 0.04
 ) : Analysis {
-    override val info = VersionInfo(Op.O4, 0, change = "Baseline gerado por IA")
 
     override fun run(input: AnalysisInput): Dataset<Row> {
-        println("\n--- [${info.label}] Classificação de Tipo de Viagem (Trip-Type Classification) ---")
+        println("\n--- [O4] Classificação de Tipo de Viagem (Trip-Type Classification) ---")
 
         val dfPrepared = input.trips
             .withColumn("hour_of_day", sf.hour(sf.col("tpep_pickup_datetime")))
             .withColumn("year_month", sf.date_format(sf.col("tpep_pickup_datetime"), "yyyy-MM"))
 
-        // 1. Agregação por bucket (PULocationID, hour_of_day) para calcular frações
+        // 1. Aggregate per (PULocationID, hour_of_day) bucket to compute the fractions
         val bucketFractions = dfPrepared
             .groupBy("PULocationID", "hour_of_day")
             .agg(
@@ -39,7 +36,7 @@ class O4V0Baseline(
                 sf.avg(sf.`when`(sf.col("passenger_count").geq(4), 1.0).otherwise(0.0)).alias("frac_group")
             )
 
-        // 2. Classificação de cada bucket com base nos limiares configuráveis
+        // 2. Classify each bucket based on the configurable thresholds
         val zoneTypeExpr = sf.`when`(
             sf.col("frac_airport").geq(airportThreshold),
             sf.lit("transit")
@@ -57,11 +54,11 @@ class O4V0Baseline(
             .withColumn("zone_type", zoneTypeExpr)
             .select("PULocationID", "hour_of_day", "zone_type")
 
-        // 3. Juntar a classificação de volta à tabela de viagens
+        // 3. Join the classification back to the trip table
         val tripsWithZoneType = dfPrepared
             .join(classifiedBuckets, arrayOf("PULocationID", "hour_of_day"))
 
-        // 4. Calcular estatísticas de tarifa e distância por tipo de zona e mês
+        // 4. Compute fare and distance statistics per zone type and month
         val o4Stats = tripsWithZoneType
             .groupBy("year_month", "zone_type")
             .agg(

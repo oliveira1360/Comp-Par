@@ -1,4 +1,4 @@
-# Dados (nunca cometer ficheiros pesados no repositório)
+# Data (never commit large files to the repository)
 data/
 *.parquet
 *.csv
@@ -17,17 +17,17 @@ __pycache__/
 .idea/
 .vscode/
 
-# Logs e outputs
+# Logs and outputs
 logs/
 output/
 *.log
 
-# Checkpoints do Spark
+# Spark checkpoints
 checkpoint/
 metastore_db/
 warehouse/
 
-# Local temporário e agentes
+# Local temp files and agents
 .agents/
 .agents
 lab3/

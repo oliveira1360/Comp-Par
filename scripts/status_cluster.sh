@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Mostra o estado dos contentores do cluster Spark
+# Shows the status of the Spark cluster containers
 
 cd "$(dirname "$0")/.." || exit 1
 

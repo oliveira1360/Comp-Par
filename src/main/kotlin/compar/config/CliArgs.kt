@@ -1,13 +1,9 @@
 package compar.config
 
-import compar.ops.Op
 import kotlin.system.exitProcess
 
 /**
- * Representa os argumentos da linha de comando para o pipeline de análise NYC Yellow Taxi.
- *
- * versions guarda a versão pedida por operação; defaultVersion aplica-se às restantes
- * (null = a versão mais recente de cada operação).
+ * Command-line arguments for the NYC Yellow Taxi analytics pipeline.
  */
 data class CliArgs(
     val data: String = "data/yellow_tripdata_2024-01.parquet",
@@ -16,10 +12,7 @@ data class CliArgs(
     val master: String? = null,
     val sample: Double? = null,
     val profile: Boolean = false,
-    val operations: List<Op> = Op.entries,
-    val versions: Map<Op, Int> = emptyMap(),
-    val defaultVersion: Int? = null,
-    val listVersions: Boolean = false,
+    val operations: List<String> = listOf("M1", "M2", "M3", "O1", "O4"),
     val exportMetricsPath: String? = "output/profiling_report.json"
 )
 
@@ -30,10 +23,7 @@ fun parseArgs(args: Array<String>): CliArgs {
     var master: String? = null
     var sample: Double? = null
     var profile = false
-    var operations = Op.entries.toList()
-    var versions = emptyMap<Op, Int>()
-    var defaultVersion: Int? = null
-    var listVersions = false
+    var operations = listOf("M1", "M2", "M3", "O1", "O4")
     var exportMetricsPath: String? = "output/profiling_report.json"
 
     var i = 0
@@ -65,22 +55,7 @@ fun parseArgs(args: Array<String>): CliArgs {
             }
             "--ops", "--operations" -> {
                 require(i + 1 < args.size) { "O parâmetro --ops requer uma lista separada por vírgulas (ex: M1,M2,O1)." }
-                operations = args[++i].split(",").map { it.trim() }.filter { it.isNotEmpty() }.map(::parseOp)
-            }
-            "--versions" -> {
-                require(i + 1 < args.size) { "O parâmetro --versions requer uma lista (ex: ALL=0,O1=2)." }
-                val pairs = args[++i].split(",").map { it.trim() }.filter { it.isNotEmpty() }.map { entry ->
-                    val parts = entry.split("=")
-                    require(parts.size == 2) { "Entrada inválida em --versions: '$entry' (formato: OP=N)" }
-                    val version = parts[1].trim().toIntOrNull()
-                        ?: throw IllegalArgumentException("Versão inválida em --versions: '$entry'")
-                    parts[0].trim().uppercase() to version
-                }
-                defaultVersion = pairs.lastOrNull { it.first == "ALL" }?.second
-                versions = pairs.filter { it.first != "ALL" }.associate { parseOp(it.first) to it.second }
-            }
-            "--list-versions" -> {
-                listVersions = true
+                operations = args[++i].split(",").map { it.trim().uppercase() }.filter { it.isNotEmpty() }
             }
             "--export-metrics" -> {
                 require(i + 1 < args.size) { "O parâmetro --export-metrics requer um caminho de ficheiro." }
@@ -97,10 +72,6 @@ fun parseArgs(args: Array<String>): CliArgs {
                       --sample <fraction>     Fração de amostragem dos dados (ex: 0.1 para 10%)
                       --profile               Ativar o SparkProfiler para recolha de métricas de stages/shuffles
                       --ops <M1,M2,M3,O1,O4>  Operações a executar (default: M1,M2,M3,O1,O4)
-                      --versions <OP=N,...>   Versão por operação; ALL=N aplica-se às restantes (default: mais recente)
-                                              ex: --versions ALL=0        (baseline completo)
-                                                  --versions M1=1,O1=2
-                      --list-versions         Lista todas as versões registadas e termina
                       --export-metrics <path> Caminho JSON para exportar métricas do profiler (default: output/profiling_report.json)
                     """.trimIndent()
                 )
@@ -121,15 +92,6 @@ fun parseArgs(args: Array<String>): CliArgs {
         sample = sample,
         profile = profile,
         operations = operations,
-        versions = versions,
-        defaultVersion = defaultVersion,
-        listVersions = listVersions,
         exportMetricsPath = exportMetricsPath
     )
 }
-
-private fun parseOp(name: String): Op =
-    Op.entries.firstOrNull { it.name == name.uppercase() }
-        ?: throw IllegalArgumentException(
-            "Operação desconhecida: '$name' (disponíveis: ${Op.entries.joinToString(",")})"
-        )

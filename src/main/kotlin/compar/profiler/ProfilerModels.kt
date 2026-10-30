@@ -1,7 +1,7 @@
 package compar.profiler
 
 /**
- * Métricas agregadas de uma execução (operação) registada pelo profiler.
+ * Aggregated metrics of one execution (operation) recorded by the profiler.
  */
 data class RunMetrics(
     val wallTimeS: Double,
@@ -25,7 +25,7 @@ data class RunMetrics(
     val stages: List<StageSummary> = emptyList()
 ) {
     /**
-     * Converte as métricas escalares para mapa para facilitar exportação ou comparações.
+     * Converts the scalar metrics to a map to simplify exports and comparisons.
      */
     fun toMap(): Map<String, Number> = linkedMapOf(
         "wall_time_s" to wallTimeS,
@@ -50,7 +50,7 @@ data class RunMetrics(
 }
 
 /**
- * Resumo de métricas por stage individual para diagnóstico de bottlenecks e skew.
+ * Per-stage metrics summary for diagnosing bottlenecks and skew.
  */
 data class StageSummary(
     val stageId: Int,

@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Compila o projeto Kotlin (com Gradle) e submete o JAR no Spark Master dentro do Docker
+# Builds the Kotlin project (with Gradle) and submits the JAR to the Spark Master inside Docker
 
 set -e
 
 cd "$(dirname "$0")/.." || exit 1
 
-# Garante a utilização do JDK 17 caso o JDK do sistema seja Java 25+
+# Ensures JDK 17 is used if the system JDK is Java 25+
 if [ -d "$HOME/.jdks/temurin-17" ] && [ -z "$JAVA_HOME" ]; then
     export JAVA_HOME="$HOME/.jdks/temurin-17"
     export PATH="$JAVA_HOME/bin:$PATH"

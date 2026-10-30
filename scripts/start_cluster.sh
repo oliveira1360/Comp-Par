@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Inicia o cluster Spark no Docker com N workers e memória configurável
-# Uso:
-#   ./scripts/start_cluster.sh [WORKERS] [MEMORIA_POR_WORKER]
-# Exemplo:
-#   ./scripts/start_cluster.sh 2 3G   # Inicia 2 workers com 3GB de RAM cada (default: 2 workers, 2GB)
+# Starts the Spark cluster on Docker with N workers and configurable memory
+# Usage:
+#   ./scripts/start_cluster.sh [WORKERS] [MEMORY_PER_WORKER]
+# Example:
+#   ./scripts/start_cluster.sh 2 3G   # Starts 2 workers with 3GB of RAM each (default: 2 workers, 2GB)
 
 WORKERS=${1:-2}
 WORKER_MEM=${2:-2G}
@@ -16,7 +16,7 @@ echo " - Workers: $WORKERS"
 echo " - Memória por Worker: $SPARK_WORKER_MEMORY"
 echo "====================================================="
 
-# Garante que corre a partir da pasta raiz do projeto
+# Ensures it runs from the project root
 cd "$(dirname "$0")/.." || exit 1
 mkdir -p data output
 

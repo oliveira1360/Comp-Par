@@ -1,27 +1,18 @@
 package compar.ops.m1
 
-import compar.ops.Ingestion
-import compar.ops.Op
-import compar.ops.Source
-import compar.ops.VersionInfo
+import compar.ops.DataLoader
 import org.apache.spark.sql.Dataset
 import org.apache.spark.sql.Row
 import org.apache.spark.sql.SparkSession
 
 /**
- * M1 v1 — TODO: nome da otimização.
- * Bottleneck (v0): TODO: o que o profiling mostrou.
- * Alteração: TODO: o que muda face à v0.
+ * M1 v1 — TODO: optimization name.
+ * Bottleneck (v0): TODO: what profiling showed.
+ * Change: TODO: what changes compared to v0.
  */
-class M1V1 : Ingestion {
-    override val info = VersionInfo(
-        Op.M1, 1,
-        bottleneck = "TODO",
-        change = "TODO"
-    )
-
-    override fun load(spark: SparkSession, source: Source): Dataset<Row> {
-        // TODO: copiar M1V0Baseline e aplicar a otimização
+class M1V1 : DataLoader {
+    override fun load(spark: SparkSession, dataPath: String, sampleFraction: Double?): Dataset<Row> {
+        // TODO: copy M1V0Baseline and apply the optimization
         TODO("M1 v1 por implementar")
     }
 }

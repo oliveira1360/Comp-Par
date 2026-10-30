@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
-# Corre o pipeline no cluster Docker várias vezes (com --profile) e guarda os tempos e o resultado de cada execução.
+# Runs the pipeline on the Docker cluster several times (with --profile) and saves the times and result of each run.
 #
-# Uso:
-#   ./scripts/benchmark.sh <ETIQUETA> [N_EXECUCOES] [DATA] [-- argumentos extra para o job]
-# Exemplos:
-#   ./scripts/benchmark.sh baseline                                   # 3 execuções, ano 2024 completo
+# Usage:
+#   ./scripts/benchmark.sh <LABEL> [N_RUNS] [DATA] [-- extra job arguments]
+# Examples:
+#   ./scripts/benchmark.sh baseline                                   # 3 runs, full year 2024
 #   ./scripts/benchmark.sh m1-cache 5 "/data/yellow_tripdata_2024-0[1-3].parquet"
 #   ./scripts/benchmark.sh amostra 3 "/data/yellow_tripdata_2024-*.parquet" -- --sample 0.1
 #
-# Resultados:
-#   benchmarks/results.csv                         uma linha por execução (acumula entre corridas)
-#   benchmarks/logs/<data>_<etiqueta>_run<N>.log   output completo de cada execução
+# Results:
+#   benchmarks/results.csv                         one line per run (accumulates across benchmarks)
+#   benchmarks/logs/<date>_<label>_run<N>.log      full output of each run
 
 set -e
 
-# Impede o Git Bash (MSYS) de converter caminhos do contentor (/opt, /apps, /data) em caminhos Windows
+# Stops Git Bash (MSYS) from converting container paths (/opt, /apps, /data) to Windows paths
 export MSYS_NO_PATHCONV=1
 
 LABEL=${1:?"Indica uma etiqueta para esta corrida (ex: baseline)"}
@@ -26,7 +26,7 @@ EXTRA_ARGS=("$@")
 
 cd "$(dirname "$0")/.." || exit 1
 
-# Garante a utilização do JDK 17 caso o JDK do sistema seja Java 25+
+# Ensures JDK 17 is used if the system JDK is Java 25+
 if [ -d "$HOME/.jdks/temurin-17" ] && [ -z "$JAVA_HOME" ]; then
     export JAVA_HOME="$HOME/.jdks/temurin-17"
     export PATH="$JAVA_HOME/bin:$PATH"
@@ -51,13 +51,13 @@ if [ ! -f "$CSV" ]; then
     echo "timestamp,label,run,data,extra_args,workers,status,total_s,m1_s,m2_s,m3_s,m1_input,m2_input,m3_input,m1_disk_spill,m2_disk_spill,m3_disk_spill,total_records,valid_records,m3_flagged" > "$CSV"
 fi
 
-# Extrai uma coluna da linha de uma operação na tabela do SparkProfiler (colunas separadas por "|")
+# Extracts a column from an operation's row in the SparkProfiler table (columns separated by "|")
 profiler_col() {
     local log=$1 op=$2 col=$3
     grep -E "^${op} +\|" "$log" | tail -1 | awk -F'|' -v c="$col" '{gsub(/ /, "", $c); print $c}'
 }
 
-# Extrai o número de uma linha do tipo "[M1] Registos válidos: 8,400,459 (87.92%)"
+# Extracts the number from a line such as "[M1] Registos válidos: 8,400,459 (87.92%)"
 count_after() {
     local log=$1 prefix=$2
     grep -F "$prefix" "$log" | tail -1 | sed -E 's/^[^:]*: *([0-9][0-9,]*).*/\1/' | tr -d ','

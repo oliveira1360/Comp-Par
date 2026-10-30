@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Pára todos os contentores do cluster Spark
+# Stops all the Spark cluster containers
 
 echo "A parar o cluster Spark..."
 

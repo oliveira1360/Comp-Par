@@ -1,65 +1,66 @@
 package compar.runner
 
 import compar.config.CliArgs
+import compar.ops.Analysis
 import compar.ops.AnalysisInput
-import compar.ops.Op
-import compar.ops.Registry
-import compar.ops.Source
-import compar.ops.Step
+import compar.ops.DataLoader
 import compar.profiler.SparkProfiler
 import compar.util.SparkUtils
+import org.apache.spark.sql.Dataset
+import org.apache.spark.sql.Row
 import org.apache.spark.sql.SparkSession
 
 /**
- * PipelineRunner é responsável por orquestrar a execução das operações analíticas (M1-M3, O1, O4):
- * resolve no Registry a versão pedida de cada operação, executa o M1 uma única vez
- * e aplica profiling de forma transparente a cada etapa.
+ * PipelineRunner orchestrates the execution of the analytical operations (M1-M3, O1, O4),
+ * manages the lifecycle of the in-memory DataFrames and transparently applies profiling
+ * to each requested step. Receives the implementation of each operation through dependency injection.
  */
 class PipelineRunner(
     private val spark: SparkSession,
     private val cliArgs: CliArgs,
-    private val profiler: SparkProfiler?
+    private val profiler: SparkProfiler?,
+    private val m1: DataLoader,
+    private val m2: Analysis,
+    private val m3: Analysis,
+    private val o1: Analysis,
+    private val o4: Analysis
 ) {
-    /**
-     * Executa o M1 e, em sequência, as análises especificadas em cliArgs.operations.
-     * O M1 corre sempre, pois todas as análises dependem dos dados limpos.
-     */
-    fun run() {
-        val ingestion = Registry.ingestion(versionOf(Op.M1))
-        val analyses = cliArgs.operations
-            .filter { it != Op.M1 }
-            .map { Registry.analysis(it, versionOf(it)) }
-
-        val trips = profiled(ingestion) {
-            ingestion.load(spark, Source(cliArgs.data, cliArgs.sample))
+    // Cleaned M1 data; M1 runs automatically the first time it is needed, and only once
+    private val dfClean: Dataset<Row> by lazy {
+        runOp("M1_ingestion_and_cleaning") {
+            m1.load(spark, cliArgs.data, cliArgs.sample)
         }
-        if (analyses.isEmpty()) return
-
-        // Valida as colunas pedidas por cada análise antes de executar qualquer uma delas
-        val available = trips.columns().toSet()
-        analyses.forEach { analysis ->
-            val missing = analysis.requiredColumns - available
-            require(missing.isEmpty()) {
-                "${analysis.info.label} precisa das colunas $missing, que ${ingestion.info.label} não produz"
-            }
-        }
-
-        val input = AnalysisInput(
-            spark = spark,
-            trips = trips,
-            zones = SparkUtils.loadZoneLookup(spark, cliArgs.lookup),
-            outputDir = cliArgs.output
-        )
-        analyses.forEach { analysis -> profiled(analysis) { analysis.run(input) } }
     }
 
-    /** Versão pedida para a operação; null significa a mais recente. */
-    private fun versionOf(op: Op): Int? = cliArgs.versions[op] ?: cliArgs.defaultVersion
+    // Input of the analyses; loads the zone table only if an operation needs it
+    private val input by lazy {
+        AnalysisInput(spark, dfClean, SparkUtils.loadZoneLookup(spark, cliArgs.lookup), cliArgs.output)
+    }
 
     /**
-     * Executa um bloco de código com profiling se o profiler estiver ativo,
-     * ou diretamente caso contrário.
+     * Runs the operations specified in cliArgs.operations in sequence.
      */
-    private fun <T> profiled(step: Step, block: () -> T): T =
-        profiler?.profile(step.info.label, block) ?: block()
+    fun run() {
+        for (op in cliArgs.operations) {
+            executeOperation(op)
+        }
+    }
+
+    private fun executeOperation(op: String) {
+        when (op) {
+            "M1" -> dfClean
+            "M2" -> runOp("M2_temporal_demand") { m2.run(input) }
+            "M3" -> runOp("M3_zone_statistics") { m3.run(input) }
+            "O1" -> runOp("O1_fare_anomaly_detection") { o1.run(input) }
+            "O4" -> runOp("O4_trip_type_classification") { o4.run(input) }
+            else -> System.err.println("Aviso: operação '$op' desconhecida.")
+        }
+    }
+
+    /**
+     * Runs a code block with profiling if the profiler is active,
+     * or directly otherwise.
+     */
+    private fun <T> runOp(name: String, block: () -> T): T =
+        profiler?.profile(name, block) ?: block()
 }

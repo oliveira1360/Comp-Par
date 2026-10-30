@@ -15,18 +15,18 @@ import kotlin.math.abs
 import kotlin.math.roundToLong
 
 /**
- * Utilitário melhorado para perfilagem (profiling) de pipelines Spark em Kotlin.
+ * Enhanced profiling utility for Spark pipelines in Kotlin.
  *
- * Utiliza o rastreador nativo do Spark e a REST API da Web UI
+ * Uses Spark's native status tracker and the Web UI REST API
  * (`http://<driver-host>:<ui-port>/api/v1/applications/<app-id>/stages`)
- * para recolher métricas cruciais de desempenho:
- * - Tempos de execução e CPU
- * - Sobrecarga de Garbage Collection (JVM GC Time)
- * - Picos de memória de execução (Peak Execution Memory)
- * - Volumes e contagens de shuffle (Read / Write Bytes e Registos)
- * - Spills para memória e disco
- * - Detalhes e potenciais assimetrias (skew) por stage
- * - Suporte a exportação em JSON e Markdown
+ * to collect key performance metrics:
+ * - Execution and CPU times
+ * - Garbage Collection overhead (JVM GC Time)
+ * - Peak Execution Memory
+ * - Shuffle volumes and counts (Read / Write Bytes and Records)
+ * - Memory and disk spills
+ * - Per-stage details and potential skew
+ * - JSON and Markdown export
  */
 class SparkProfiler(
     private val spark: SparkSession,
@@ -47,7 +47,7 @@ class SparkProfiler(
         val rawUrl = if (urlOpt.isDefined) urlOpt.get() else null
         val port = rawUrl?.substringAfterLast(":", "4040") ?: "4040"
         
-        // Tenta primeiro o URL original; se falhar, tenta localhost
+        // Try the original URL first; if it fails, try localhost
         if (rawUrl != null && isReachable(rawUrl)) {
             return rawUrl
         }
@@ -90,7 +90,7 @@ class SparkProfiler(
     }
 
     /**
-     * Envolve o bloco de código a medir, atribuindo-lhe um JobGroup e recolhendo métricas no fim.
+     * Wraps the code block to measure, assigning it a JobGroup and collecting metrics at the end.
      */
     fun <T> profile(name: String, block: () -> T): T {
         val groupId = "$name-${UUID.randomUUID().toString().replace("-", "").take(8)}"
@@ -102,7 +102,7 @@ class SparkProfiler(
             val wallTimeS = (System.nanoTime() - wallStartNs) / 1_000_000_000.0
             try {
                 sc.clearJobGroup()
-                // Breve pausa para garantir consistência dos listeners internos da REST API
+                // Short pause so the REST API's internal listeners are consistent
                 Thread.sleep(80)
                 val metrics = collect(groupId, wallTimeS)
                 runs[name] = metrics
@@ -114,7 +114,7 @@ class SparkProfiler(
                     )
                 )
             } catch (e: Exception) {
-                // Fallback gracioso com métricas básicas em caso de erro na UI REST API
+                // Graceful fallback with basic metrics if the UI REST API fails
                 val fallbackMetrics = RunMetrics(
                     wallTimeS = (wallTimeS * 100.0).roundToLong() / 100.0,
                     numJobs = 0,
@@ -192,7 +192,7 @@ class SparkProfiler(
             numStages = wanted.size,
             numTasks = sumField("numTasks"),
             executorRunTimeMs = sumField("executorRunTime"),
-            // executorCpuTime vem em nanosegundos na REST API; convertemos para ms
+            // executorCpuTime comes in nanoseconds from the REST API; convert to ms
             executorCpuTimeMs = sumField("executorCpuTime") / 1_000_000L,
             jvmGcTimeMs = sumField("jvmGcTime"),
             peakExecutionMemoryBytes = sumField("peakExecutionMemory"),
@@ -209,7 +209,7 @@ class SparkProfiler(
     }
 
     /**
-     * Gera relatório tabular formatado para a consola.
+     * Generates a formatted table report for the console.
      */
     fun report(names: List<String> = runs.keys.toList()): String {
         if (names.isEmpty()) return "(Sem execuções registadas no SparkProfiler)"
@@ -244,7 +244,7 @@ class SparkProfiler(
     }
 
     /**
-     * Gera relatório no formato Markdown para inclusão rápida no relatório ou documentação.
+     * Generates a Markdown report for quick inclusion in the report or documentation.
      */
     fun reportMarkdown(names: List<String> = runs.keys.toList()): String {
         if (names.isEmpty()) return "*(Sem execuções)*"
@@ -283,7 +283,7 @@ class SparkProfiler(
     }
 
     /**
-     * Detalha os stages de uma operação específica (útil para diagnosticar skew e shuffle).
+     * Details the stages of a specific operation (useful for diagnosing skew and shuffle).
      */
     fun stageBreakdown(runName: String): String {
         val m = runs[runName] ?: return "Execução '$runName' não encontrada."
@@ -309,7 +309,7 @@ class SparkProfiler(
     }
 
     /**
-     * Compara duas execuções (baseline vs otimizada) indicando percentagem de variação.
+     * Compares two executions (baseline vs optimized), showing the percentage change.
      */
     fun compare(before: String, after: String): String {
         val b = runs[before]?.toMap() ?: throw IllegalArgumentException("Run '$before' não encontrada")
@@ -333,7 +333,7 @@ class SparkProfiler(
     }
 
     /**
-     * Exporta os dados das execuções e stages para um ficheiro JSON estruturado.
+     * Exports the execution and stage data to a structured JSON file.
      */
     fun exportJson(filePath: String) {
         val file = File(filePath)
