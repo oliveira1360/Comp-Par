@@ -7,6 +7,7 @@ import org.apache.spark.sql.Row
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.functions as sf
 import org.apache.spark.sql.types.DataTypes
+import org.apache.spark.sql.types.NumericType
 import org.apache.spark.storage.StorageLevel
 
 /**
@@ -15,19 +16,19 @@ import org.apache.spark.storage.StorageLevel
  * Change: TODO: what changes compared to v0.
  */
 class M1V1 : DataLoader {
+    private val numericColumns = listOf(
+        "passenger_count", "RatecodeID", "payment_type", "PULocationID",
+        "DOLocationID", "trip_distance", "fare_amount", "total_amount"
+    )
+    private val timestampColumns = listOf("tpep_pickup_datetime", "tpep_dropoff_datetime")
+    private val validTimestampTypes = setOf(DataTypes.TimestampType, DataTypes.TimestampNTZType)
+
     override fun load(spark: SparkSession, dataPath: String, sampleFraction: Double?): Dataset<Row> {
         println("\n[M1] A carregar dados de: $dataPath")
         val dfRaw = spark.read().parquet(dataPath)
         val teste = sampleFraction ?: 0.05 // sub the if condition
 
-        var df = dfRaw
-            .withColumn("tpep_pickup_datetime", sf.col("tpep_pickup_datetime"))
-            .withColumn("tpep_dropoff_datetime", sf.col("tpep_dropoff_datetime"))
-            .withColumn("passenger_count", sf.col("passenger_count"))
-            .withColumn("RatecodeID", sf.col("RatecodeID"))
-            .withColumn("payment_type", sf.col("payment_type"))
-            .withColumn("PULocationID", sf.col("PULocationID"))
-            .withColumn("DOLocationID", sf.col("DOLocationID"))
+        var df = castIfNeeded(dfRaw)
             .withColumn("year", sf.year(sf.col("tpep_pickup_datetime")))
 
 
@@ -93,5 +94,31 @@ class M1V1 : DataLoader {
         println(String.format("[M1] Registos removidos no total: %,d (%.2f%%)", removedRecords, pctRemoved))
 
         return dfClean
+    }
+
+    /**
+     * Checks the schema once and casts only the columns the operations can't use as they are.
+     * This has no per-row cost for the columns that are already usable.
+     */
+    private fun castIfNeeded(input: Dataset<Row>): Dataset<Row> {
+        val types = input.schema().fields().associate { it.name() to it.dataType() }
+        val castedColumns = mutableListOf<String>()
+        var result = input
+
+        for (column in numericColumns) {
+            if (types[column] !is NumericType) {
+                result = result.withColumn(column, sf.col(column).cast(DataTypes.DoubleType))
+                castedColumns.add(column)
+            }
+        }
+        for (column in timestampColumns) {
+            if (types[column] !in validTimestampTypes) {
+                result = result.withColumn(column, sf.col(column).cast(DataTypes.TimestampType))
+                castedColumns.add(column)
+            }
+        }
+
+        println("[M1] Colunas convertidas: ${castedColumns.ifEmpty { listOf("nenhuma") }.joinToString(", ")}")
+        return result
     }
 }
