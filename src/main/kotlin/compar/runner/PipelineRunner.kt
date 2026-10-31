@@ -41,6 +41,8 @@ class PipelineRunner(
      * Runs the operations specified in cliArgs.operations in sequence.
      */
     fun run() {
+        // Resolve dfClean first so that nested M1 profiling does not clear the JobGroup of downstream operations
+        dfClean
         for (op in cliArgs.operations) {
             executeOperation(op)
         }
@@ -53,7 +55,7 @@ class PipelineRunner(
             "M3" -> runOp("M3_zone_statistics") { m3.run(input) }
             "O1" -> runOp("O1_fare_anomaly_detection") { o1.run(input) }
             "O4" -> runOp("O4_trip_type_classification") { o4.run(input) }
-            else -> System.err.println("Aviso: operação '$op' desconhecida.")
+            else -> System.err.println("Warning: unknown operation '$op'.")
         }
     }
 

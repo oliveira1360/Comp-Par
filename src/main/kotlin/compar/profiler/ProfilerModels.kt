@@ -24,6 +24,9 @@ data class RunMetrics(
     val medianTaskDurationMs: Long = 0L,
     val stages: List<StageSummary> = emptyList()
 ) {
+    val skewRatio: Double
+        get() = if (medianTaskDurationMs > 0) maxTaskDurationMs.toDouble() / medianTaskDurationMs.toDouble() else 1.0
+
     /**
      * Converts the scalar metrics to a map to simplify exports and comparisons.
      */
@@ -62,5 +65,12 @@ data class StageSummary(
     val shuffleReadBytes: Long,
     val shuffleWriteBytes: Long,
     val memorySpilledBytes: Long,
-    val diskSpilledBytes: Long
-)
+    val diskSpilledBytes: Long,
+    val peakExecutionMemoryBytes: Long = 0L,
+    val maxTaskDurationMs: Long = 0L,
+    val medianTaskDurationMs: Long = 0L
+) {
+    val skewRatio: Double
+        get() = if (medianTaskDurationMs > 0) maxTaskDurationMs.toDouble() / medianTaskDurationMs.toDouble() else 1.0
+}
+

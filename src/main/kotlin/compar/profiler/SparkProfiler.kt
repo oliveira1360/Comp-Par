@@ -29,7 +29,7 @@ import kotlin.math.roundToLong
  * - JSON and Markdown export
  */
 class SparkProfiler(
-    private val spark: SparkSession,
+    spark: SparkSession,
     uiBaseUrlOverride: String? = null
 ) {
     private val sc = spark.sparkContext()
@@ -84,9 +84,27 @@ class SparkProfiler(
             .build()
         val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
         if (response.statusCode() !in 200..299) {
-            throw RuntimeException("HTTP ${response.statusCode()} ao aceder a $uiBaseUrl$path")
+            throw RuntimeException("HTTP ${response.statusCode()} accessing $uiBaseUrl$path")
         }
         return mapper.readTree(response.body())
+    }
+
+    private fun getJsonOrNull(path: String): JsonNode? {
+        return try {
+            val request = HttpRequest.newBuilder()
+                .uri(URI.create("$uiBaseUrl$path"))
+                .timeout(Duration.ofSeconds(2))
+                .GET()
+                .build()
+            val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
+            if (response.statusCode() in 200..299) {
+                mapper.readTree(response.body())
+            } else {
+                null
+            }
+        } catch (_: Exception) {
+            null
+        }
     }
 
     /**
@@ -102,15 +120,30 @@ class SparkProfiler(
             val wallTimeS = (System.nanoTime() - wallStartNs) / 1_000_000_000.0
             try {
                 sc.clearJobGroup()
-                // Short pause so the REST API's internal listeners are consistent
-                Thread.sleep(80)
+                // Wait briefly for LiveListenerBus to finish processing events for this job group
+                val status = sc.statusTracker()
+                val deadline = System.currentTimeMillis() + 1000
+                while (System.currentTimeMillis() < deadline) {
+                    val jobIds = status.getJobIdsForGroup(groupId)
+                    if (jobIds.isNotEmpty()) {
+                        val allDone = jobIds.all { jid ->
+                            val info = status.getJobInfo(jid)
+                            info.isDefined && info.get().status().name != "RUNNING"
+                        }
+                        if (allDone) break
+                    }
+                    Thread.sleep(30)
+                }
+                // Short grace period so the REST API's internal stage metrics are fully published
+                Thread.sleep(100)
                 val metrics = collect(groupId, wallTimeS)
                 runs[name] = metrics
                 println(
                     String.format(
-                        "[%s] wall time: %.2fs (%d stages, %d tasks, shuffle read: %s, shuffle write: %s)",
+                        "[%s] Wall time: %.2fs | Stages: %d | Tasks: %d | Shuffle Read: %s | Shuffle Write: %s | Max Task: %dms | Skew: %.1fx",
                         name, wallTimeS, metrics.numStages, metrics.numTasks,
-                        fmtBytes(metrics.shuffleReadBytes), fmtBytes(metrics.shuffleWriteBytes)
+                        fmtBytes(metrics.shuffleReadBytes), fmtBytes(metrics.shuffleWriteBytes),
+                        metrics.maxTaskDurationMs, metrics.skewRatio
                     )
                 )
             } catch (e: Exception) {
@@ -136,7 +169,7 @@ class SparkProfiler(
                 runs[name] = fallbackMetrics
                 println(
                     String.format(
-                        "[%s] wall time: %.2fs (REST API indisponível: %s)",
+                        "[%s] Wall time: %.2fs (REST API unavailable: %s)",
                         name, wallTimeS, e.message
                     )
                 )
@@ -157,14 +190,21 @@ class SparkProfiler(
         }
 
         val allStages = getJson("/api/v1/applications/$appId/stages")
-        val wanted = mutableListOf<JsonNode>()
+        // Group by stageId and select the latest attempt to avoid duplicate metrics from retries
+        val stageMap = mutableMapOf<Int, JsonNode>()
         if (allStages.isArray) {
             for (stage in allStages) {
-                if (stage.path("stageId").asInt(-1) in stageIds) {
-                    wanted.add(stage)
+                val sId = stage.path("stageId").asInt(-1)
+                if (sId in stageIds) {
+                    val attemptId = stage.path("attemptId").asInt(0)
+                    val existing = stageMap[sId]
+                    if (existing == null || attemptId > existing.path("attemptId").asInt(0)) {
+                        stageMap[sId] = stage
+                    }
                 }
             }
         }
+        val wanted = stageMap.values.sortedBy { it.path("stageId").asInt() }
 
         fun sumField(field: String): Long =
             wanted.sumOf { it.path(field).asLong(0L) }
@@ -172,19 +212,49 @@ class SparkProfiler(
         val roundedWall = (wallTimeS * 100.0).roundToLong() / 100.0
 
         val stageSummaries = wanted.map { st ->
+            val sId = st.path("stageId").asInt(-1)
+            val attemptId = st.path("attemptId").asInt(0)
+            val numTasks = st.path("numTasks").asInt(0)
+
+            var stageMedianTaskMs = 0L
+            var stageMaxTaskMs = 0L
+
+            if (numTasks > 0) {
+                val summaryNode = getJsonOrNull("/api/v1/applications/$appId/stages/$sId/$attemptId/taskSummary?quantiles=0.5,1.0")
+                if (summaryNode != null && summaryNode.has("executorRunTime")) {
+                    val runTimes = summaryNode.path("executorRunTime")
+                    if (runTimes.isArray && runTimes.size() >= 2) {
+                        stageMedianTaskMs = runTimes.get(0).asLong(0L)
+                        stageMaxTaskMs = runTimes.get(1).asLong(0L)
+                    }
+                }
+            }
+
+            val displayName = st.path("description").asText(null)
+                ?.takeIf { it.isNotBlank() }
+                ?: st.path("name").asText("unknown")
+
             StageSummary(
-                stageId = st.path("stageId").asInt(-1),
-                name = st.path("name").asText("unknown"),
-                numTasks = st.path("numTasks").asInt(0),
+                stageId = sId,
+                name = displayName,
+                numTasks = numTasks,
                 executorRunTimeMs = st.path("executorRunTime").asLong(0L),
                 executorCpuTimeMs = st.path("executorCpuTime").asLong(0L) / 1_000_000L,
                 jvmGcTimeMs = st.path("jvmGcTime").asLong(0L),
                 shuffleReadBytes = st.path("shuffleReadBytes").asLong(0L),
                 shuffleWriteBytes = st.path("shuffleWriteBytes").asLong(0L),
                 memorySpilledBytes = st.path("memoryBytesSpilled").asLong(0L),
-                diskSpilledBytes = st.path("diskBytesSpilled").asLong(0L)
+                diskSpilledBytes = st.path("diskBytesSpilled").asLong(0L),
+                peakExecutionMemoryBytes = st.path("peakExecutionMemory").asLong(0L),
+                maxTaskDurationMs = stageMaxTaskMs,
+                medianTaskDurationMs = stageMedianTaskMs
             )
         }
+
+        val overallMaxTask = stageSummaries.maxOfOrNull { it.maxTaskDurationMs } ?: 0L
+        val dominantStage = stageSummaries.maxByOrNull { it.maxTaskDurationMs }
+        val overallMedianTask = dominantStage?.medianTaskDurationMs ?: 0L
+        val peakMemory = wanted.maxOfOrNull { it.path("peakExecutionMemory").asLong(0L) } ?: 0L
 
         return RunMetrics(
             wallTimeS = roundedWall,
@@ -195,7 +265,7 @@ class SparkProfiler(
             // executorCpuTime comes in nanoseconds from the REST API; convert to ms
             executorCpuTimeMs = sumField("executorCpuTime") / 1_000_000L,
             jvmGcTimeMs = sumField("jvmGcTime"),
-            peakExecutionMemoryBytes = sumField("peakExecutionMemory"),
+            peakExecutionMemoryBytes = peakMemory,
             inputBytes = sumField("inputBytes"),
             outputBytes = sumField("outputBytes"),
             shuffleReadBytes = sumField("shuffleReadBytes"),
@@ -204,6 +274,8 @@ class SparkProfiler(
             shuffleWriteRecords = sumField("shuffleWriteRecords"),
             memorySpilledBytes = sumField("memoryBytesSpilled"),
             diskSpilledBytes = sumField("diskBytesSpilled"),
+            maxTaskDurationMs = overallMaxTask,
+            medianTaskDurationMs = overallMedianTask,
             stages = stageSummaries
         )
     }
@@ -212,17 +284,21 @@ class SparkProfiler(
      * Generates a formatted table report for the console.
      */
     fun report(names: List<String> = runs.keys.toList()): String {
-        if (names.isEmpty()) return "(Sem execuções registadas no SparkProfiler)"
+        if (names.isEmpty()) return "(No executions recorded in SparkProfiler)"
 
         val headers = listOf(
             "run", "wall_time_s", "num_stages", "num_tasks",
             "exec_run_ms", "exec_cpu_ms", "jvm_gc_ms",
             "input", "output", "shuffle_read", "shuffle_write",
-            "mem_spill", "disk_spill"
+            "mem_spill", "disk_spill", "peak_mem", "task_skew"
         )
 
         val rows = names.mapNotNull { name ->
             val m = runs[name] ?: return@mapNotNull null
+            val skewDisplay = if (m.medianTaskDurationMs > 0) {
+                val ratio = m.maxTaskDurationMs.toDouble() / m.medianTaskDurationMs
+                String.format("%.1fx", ratio)
+            } else "-"
             listOf(
                 name,
                 String.format("%.2f", m.wallTimeS),
@@ -236,7 +312,9 @@ class SparkProfiler(
                 fmtBytes(m.shuffleReadBytes),
                 fmtBytes(m.shuffleWriteBytes),
                 fmtBytes(m.memorySpilledBytes),
-                fmtBytes(m.diskSpilledBytes)
+                fmtBytes(m.diskSpilledBytes),
+                fmtBytes(m.peakExecutionMemoryBytes),
+                skewDisplay
             )
         }
 
@@ -247,15 +325,20 @@ class SparkProfiler(
      * Generates a Markdown report for quick inclusion in the report or documentation.
      */
     fun reportMarkdown(names: List<String> = runs.keys.toList()): String {
-        if (names.isEmpty()) return "*(Sem execuções)*"
+        if (names.isEmpty()) return "*(No executions)*"
 
         val headers = listOf(
             "Run", "Wall Time (s)", "Stages", "Tasks", "Exec Time (ms)", "CPU Time (ms)",
-            "GC Time (ms)", "Input", "Output", "Shuffle Read", "Shuffle Write", "Mem Spill", "Disk Spill"
+            "GC Time (ms)", "Peak Mem", "Input", "Output", "Shuffle Read", "Shuffle Write",
+            "Mem Spill", "Disk Spill", "Task Skew"
         )
 
         val rows = names.mapNotNull { name ->
             val m = runs[name] ?: return@mapNotNull null
+            val skewDisplay = if (m.medianTaskDurationMs > 0) {
+                val ratio = m.maxTaskDurationMs.toDouble() / m.medianTaskDurationMs
+                String.format("%.1fx", ratio)
+            } else "-"
             listOf(
                 name,
                 String.format("%.2f", m.wallTimeS),
@@ -264,12 +347,14 @@ class SparkProfiler(
                 m.executorRunTimeMs.toString(),
                 m.executorCpuTimeMs.toString(),
                 m.jvmGcTimeMs.toString(),
+                fmtBytes(m.peakExecutionMemoryBytes),
                 fmtBytes(m.inputBytes),
                 fmtBytes(m.outputBytes),
                 fmtBytes(m.shuffleReadBytes),
                 fmtBytes(m.shuffleWriteBytes),
                 fmtBytes(m.memorySpilledBytes),
-                fmtBytes(m.diskSpilledBytes)
+                fmtBytes(m.diskSpilledBytes),
+                skewDisplay
             )
         }
 
@@ -286,23 +371,33 @@ class SparkProfiler(
      * Details the stages of a specific operation (useful for diagnosing skew and shuffle).
      */
     fun stageBreakdown(runName: String): String {
-        val m = runs[runName] ?: return "Execução '$runName' não encontrada."
-        if (m.stages.isEmpty()) return "Sem detalhes de stages para '$runName'."
+        val m = runs[runName] ?: return "Execution '$runName' not found."
+        if (m.stages.isEmpty()) return "No stage details available for '$runName'."
 
         val headers = listOf(
-            "stage_id", "num_tasks", "run_time_ms", "cpu_time_ms",
-            "gc_time_ms", "shuffle_read", "shuffle_write", "mem_spill"
+            "stage_id", "name", "num_tasks", "run_time_ms", "cpu_time_ms",
+            "gc_time_ms", "peak_mem", "shuffle_read", "shuffle_write",
+            "med_task_ms", "max_task_ms", "skew"
         )
         val rows = m.stages.map { st ->
+            val skewStr = if (st.medianTaskDurationMs > 0) {
+                val ratio = st.maxTaskDurationMs.toDouble() / st.medianTaskDurationMs
+                val flag = if (ratio >= 3.0) " (!)" else ""
+                String.format("%.1fx%s", ratio, flag)
+            } else "-"
             listOf(
                 st.stageId.toString(),
+                st.name.take(30),
                 st.numTasks.toString(),
                 st.executorRunTimeMs.toString(),
                 st.executorCpuTimeMs.toString(),
                 st.jvmGcTimeMs.toString(),
+                fmtBytes(st.peakExecutionMemoryBytes),
                 fmtBytes(st.shuffleReadBytes),
                 fmtBytes(st.shuffleWriteBytes),
-                fmtBytes(st.memorySpilledBytes)
+                st.medianTaskDurationMs.toString(),
+                st.maxTaskDurationMs.toString(),
+                skewStr
             )
         }
         return formatTable(headers, rows)
@@ -312,8 +407,8 @@ class SparkProfiler(
      * Compares two executions (baseline vs optimized), showing the percentage change.
      */
     fun compare(before: String, after: String): String {
-        val b = runs[before]?.toMap() ?: throw IllegalArgumentException("Run '$before' não encontrada")
-        val a = runs[after]?.toMap() ?: throw IllegalArgumentException("Run '$after' não encontrada")
+        val b = runs[before]?.toMap() ?: throw IllegalArgumentException("Run '$before' not found")
+        val a = runs[after]?.toMap() ?: throw IllegalArgumentException("Run '$after' not found")
 
         val headers = listOf("metric", before, after, "change")
         val rows = b.keys.map { key ->
@@ -336,10 +431,19 @@ class SparkProfiler(
      * Exports the execution and stage data to a structured JSON file.
      */
     fun exportJson(filePath: String) {
-        val file = File(filePath)
+        val targetPath = resolveOutputPath(filePath)
+        val file = File(targetPath)
         file.parentFile?.mkdirs()
         mapper.writeValue(file, runs)
-        println("[SparkProfiler] Relatório detalhado exportado para: ${file.absolutePath}")
+        println("[SparkProfiler] Detailed report exported to: ${file.absolutePath}")
+    }
+
+    private fun resolveOutputPath(path: String): String {
+        // If running inside Docker where /output is mounted, and path is relative "output/..."
+        if (File("/output").isDirectory && (path.startsWith("output/") || path == "output")) {
+            return "/output" + path.removePrefix("output")
+        }
+        return path
     }
 
     companion object {

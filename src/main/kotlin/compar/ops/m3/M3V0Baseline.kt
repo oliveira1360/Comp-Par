@@ -18,7 +18,7 @@ import org.apache.spark.sql.functions as sf
 class M3V0Baseline : Analysis {
 
     override fun run(input: AnalysisInput): Dataset<Row> {
-        println("\n--- [M3] Estatísticas ao Nível da Zona ---")
+        println("\n--- [M3] Zone-Level Statistics ---")
 
         val zonesPickup = input.zones.select(
             sf.col("LocationID").alias("PULocationID"),
@@ -77,7 +77,7 @@ class M3V0Baseline : Analysis {
         m3Df.show(20, false)
 
         val flaggedCount = m3Df.filter(sf.col("volume_deviation_flag").equalTo(true)).count()
-        println(String.format("[M3] Total de zonas-mês com desvio > 1.5 std: %,d", flaggedCount))
+        println(String.format("[M3] Total zone-months with volume deviation > 1.5 std: %,d", flaggedCount))
 
         return m3Df
     }

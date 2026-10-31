@@ -20,8 +20,13 @@ services:
       /opt/spark/bin/spark-class
       org.apache.spark.deploy.worker.Worker
       spark://spark-master:7077
-      --cores 2
+      --cores ${SPARK_WORKER_CORES:-2}
       --memory ${SPARK_WORKER_MEMORY:-2G}
+    deploy:
+      resources:
+        limits:
+          cpus: '${SPARK_WORKER_CPUS:-2.0}'
+          memory: ${SPARK_WORKER_CONTAINER_MEM:-6G}
     depends_on:
       - spark-master
     volumes:

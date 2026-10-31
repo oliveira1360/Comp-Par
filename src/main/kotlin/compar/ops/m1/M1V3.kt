@@ -22,6 +22,7 @@ import java.time.LocalDate
  * Runs that need Spark's row handling (sampling, or other column types) use M1V2 instead.
  */
 class M1V3 : DataLoader {
+
     private val expectedTypes: Map<String, DataType> = mapOf(
         "tpep_pickup_datetime" to DataTypes.TimestampNTZType,
         "tpep_dropoff_datetime" to DataTypes.TimestampNTZType,
@@ -40,8 +41,8 @@ class M1V3 : DataLoader {
             return M1V2().load(spark, dataPath, sampleFraction)
         }
 
-        println("\n[M1] A carregar dados de: $dataPath")
-        println("[M1] Colunas convertidas: nenhuma")
+        println("\n[M1] Loading data from: $dataPath")
+        println("[M1] Casted columns: none")
         val files = raw.inputFiles().toList()
         val jsc = JavaSparkContext.fromSparkContext(spark.sparkContext())
         val perFile = jsc.parallelize(files, files.size).mapPartitions(ScanFiles(expectedTypes.keys.toList())).collect()
@@ -90,11 +91,11 @@ private class ScanFiles(private val columns: List<String>) :
             reader.initialize(files.next(), columns)
             val batch = reader.resultBatch()
             val pickup = batch.column(0)
-            val dropoff = batch.column(1)
+            val dropOff = batch.column(1)
             val passengers = batch.column(2)
             val distance = batch.column(3)
             val pickupZone = batch.column(4)
-            val dropoffZone = batch.column(5)
+            val dropOffZone = batch.column(5)
             val fare = batch.column(6)
 
             while (reader.nextBatch()) {
@@ -110,16 +111,16 @@ private class ScanFiles(private val columns: List<String>) :
                     }
                 }
                 for (i in 0 until rows) {
-                    if (pickup.isNullAt(i) || dropoff.isNullAt(i) || dropoff.getLong(i) <= pickup.getLong(i)) {
+                    if (pickup.isNullAt(i) || dropOff.isNullAt(i) || dropOff.getLong(i) <= pickup.getLong(i)) {
                         masks[i] = masks[i] or 8
                     }
                 }
                 for (i in 0 until rows) {
-                    if (pickupZone.isNullAt(i) || dropoffZone.isNullAt(i)) {
+                    if (pickupZone.isNullAt(i) || dropOffZone.isNullAt(i)) {
                         masks[i] = masks[i] or 16
                     } else {
                         val from = pickupZone.getInt(i)
-                        val to = dropoffZone.getInt(i)
+                        val to = dropOffZone.getInt(i)
                         if (from !in 1..263 || to < 1 || to > 263) masks[i] = masks[i] or 16
                     }
                 }

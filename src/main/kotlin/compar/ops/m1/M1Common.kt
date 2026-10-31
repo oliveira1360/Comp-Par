@@ -66,7 +66,7 @@ internal fun castIfNeeded(input: Dataset<Row>): Dataset<Row> {
         }
     }
 
-    println("[M1] Colunas convertidas: ${castedColumns.ifEmpty { listOf("nenhuma") }.joinToString(", ")}")
+    println("[M1] Casted columns: ${castedColumns.ifEmpty { listOf("none") }.joinToString(", ")}")
     return result
 }
 
@@ -85,7 +85,7 @@ internal fun addToYear(counters: MutableMap<Int?, LongArray>, year: Int?, mask: 
  * The table is formatted on the driver, because show() on a DataFrame costs about 1 s just to generate code.
  */
 internal fun printCleaningStats(counters: Map<Int?, LongArray>) {
-    println("\n--- [M1] Estatísticas de Limpeza por Ano (Registos Removidos) ---")
+    println("\n--- [M1] Yearly Cleaning Statistics (Removed Records) ---")
     val header = listOf(
         "year", "total_records", "invalid_fare", "invalid_distance", "invalid_passenger",
         "invalid_time", "invalid_location", "valid_records"
@@ -106,8 +106,8 @@ internal fun printCleaningStats(counters: Map<Int?, LongArray>) {
     val validRecords = counters.values.sumOf { it[6] }
     val removedRecords = totalRecords - validRecords
     val pctRemoved = if (totalRecords > 0) (removedRecords.toDouble() / totalRecords.toDouble() * 100.0) else 0.0
-    println(String.format("[M1] Total de registos lidos: %,d", totalRecords))
-    println(String.format("[M1] Registos válidos: %,d (%.2f%%)", validRecords, 100.0 - pctRemoved))
-    println(String.format("[M1] Registos removidos no total: %,d (%.2f%%)", removedRecords, pctRemoved))
+    println(String.format("[M1] Total records read: %,d", totalRecords))
+    println(String.format("[M1] Valid records: %,d (%.2f%%)", validRecords, 100.0 - pctRemoved))
+    println(String.format("[M1] Total removed records: %,d (%.2f%%)", removedRecords, pctRemoved))
 }
 

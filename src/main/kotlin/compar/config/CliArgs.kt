@@ -6,7 +6,7 @@ import kotlin.system.exitProcess
  * Command-line arguments for the NYC Yellow Taxi analytics pipeline.
  */
 data class CliArgs(
-    val data: String = "data/yellow_tripdata_2024-01.parquet",
+    val data: String = "data/yellow_tripdata_2015-01.parquet",
     val lookup: String = "data/taxi_zone_lookup.csv",
     val output: String = "output",
     val master: String? = null,
@@ -17,7 +17,7 @@ data class CliArgs(
 )
 
 fun parseArgs(args: Array<String>): CliArgs {
-    var data = "data/yellow_tripdata_2024-01.parquet"
+    var data = "data/yellow_tripdata_2015-01.parquet"
     var lookup = "data/taxi_zone_lookup.csv"
     var output = "output"
     var master: String? = null
@@ -30,55 +30,55 @@ fun parseArgs(args: Array<String>): CliArgs {
     while (i < args.size) {
         when (args[i]) {
             "--data" -> {
-                require(i + 1 < args.size) { "O parâmetro --data requer um valor." }
+                require(i + 1 < args.size) { "Parameter --data requires a value." }
                 data = args[++i]
             }
             "--lookup" -> {
-                require(i + 1 < args.size) { "O parâmetro --lookup requer um valor." }
+                require(i + 1 < args.size) { "Parameter --lookup requires a value." }
                 lookup = args[++i]
             }
             "--output" -> {
-                require(i + 1 < args.size) { "O parâmetro --output requer um valor." }
+                require(i + 1 < args.size) { "Parameter --output requires a value." }
                 output = args[++i]
             }
             "--master" -> {
-                require(i + 1 < args.size) { "O parâmetro --master requer um valor." }
+                require(i + 1 < args.size) { "Parameter --master requires a value." }
                 master = args[++i]
             }
             "--sample" -> {
-                require(i + 1 < args.size) { "O parâmetro --sample requer um valor numérico." }
+                require(i + 1 < args.size) { "Parameter --sample requires a numeric value." }
                 sample = args[++i].toDoubleOrNull()
-                    ?: throw IllegalArgumentException("Valor inválido para --sample: ${args[i]}")
+                    ?: throw IllegalArgumentException("Invalid value for --sample: ${args[i]}")
             }
             "--profile" -> {
                 profile = true
             }
             "--ops", "--operations" -> {
-                require(i + 1 < args.size) { "O parâmetro --ops requer uma lista separada por vírgulas (ex: M1,M2,O1)." }
+                require(i + 1 < args.size) { "Parameter --ops requires a comma-separated list (e.g. M1,M2,O1)." }
                 operations = args[++i].split(",").map { it.trim().uppercase() }.filter { it.isNotEmpty() }
             }
             "--export-metrics" -> {
-                require(i + 1 < args.size) { "O parâmetro --export-metrics requer um caminho de ficheiro." }
+                require(i + 1 < args.size) { "Parameter --export-metrics requires a file path." }
                 exportMetricsPath = args[++i]
             }
             "--help", "-h" -> {
                 println(
                     """
-                    Uso: spark-submit ... nyc-taxi-analytics.jar [opções]
-                      --data <path>           Caminho para ficheiro(s) Parquet de entrada (default: data/yellow_tripdata_2024-01.parquet)
-                      --lookup <path>         Caminho para o ficheiro taxi_zone_lookup.csv (default: data/taxi_zone_lookup.csv)
-                      --output <path>         Diretoria de saída para resultados Parquet (default: output)
-                      --master <url>          URL do Spark Master (ex: local[*] ou spark://spark-master:7077)
-                      --sample <fraction>     Fração de amostragem dos dados (ex: 0.1 para 10%)
-                      --profile               Ativar o SparkProfiler para recolha de métricas de stages/shuffles
-                      --ops <M1,M2,M3,O1,O4>  Operações a executar (default: M1,M2,M3,O1,O4)
-                      --export-metrics <path> Caminho JSON para exportar métricas do profiler (default: output/profiling_report.json)
+                    Usage: spark-submit ... nyc-taxi-analytics.jar [options]
+                      --data <path>           Path to input Parquet file(s) (default: data/yellow_tripdata_2015-01.parquet)
+                      --lookup <path>         Path to taxi_zone_lookup.csv (default: data/taxi_zone_lookup.csv)
+                      --output <path>         Output directory for Parquet results (default: output)
+                      --master <url>          Spark Master URL (e.g. local[*] or spark://spark-master:7077)
+                      --sample <fraction>     Sampling fraction (e.g. 0.1 for 10%)
+                      --profile               Enable SparkProfiler for stage, shuffle, and memory metrics
+                      --ops <M1,M2,M3,O1,O4>  Operations to execute (default: M1,M2,M3,O1,O4)
+                      --export-metrics <path> JSON file path to export profiler metrics (default: output/profiling_report.json)
                     """.trimIndent()
                 )
                 exitProcess(0)
             }
             else -> {
-                System.err.println("Aviso: argumento desconhecido ignorado: ${args[i]}")
+                System.err.println("Warning: unknown argument ignored: ${args[i]}")
             }
         }
         i++

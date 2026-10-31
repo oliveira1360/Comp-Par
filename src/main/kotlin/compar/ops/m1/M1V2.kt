@@ -16,12 +16,12 @@ import org.apache.spark.sql.functions as sf
 class M1V2 : DataLoader {
 
     override fun load(spark: SparkSession, dataPath: String, sampleFraction: Double?): Dataset<Row> {
-        println("\n[M1] A carregar dados de: $dataPath")
+        println("\n[M1] Loading data from: $dataPath")
         var df = castIfNeeded(readTrips(spark, dataPath))
             .withColumn("year", sf.year(sf.col("tpep_pickup_datetime")))
 
         if (sampleFraction != null && sampleFraction > 0.0 && sampleFraction < 1.0) {
-            println(String.format("[M1] A aplicar amostragem de %.1f%%", sampleFraction * 100.0))
+            println(String.format("[M1] Applying sampling of %.1f%%", sampleFraction * 100.0))
             df = df.sample(sampleFraction, 42L)
         }
 

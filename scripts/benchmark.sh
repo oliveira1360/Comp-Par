@@ -4,9 +4,9 @@
 # Usage:
 #   ./scripts/benchmark.sh <LABEL> [N_RUNS] [DATA] [-- extra job arguments]
 # Examples:
-#   ./scripts/benchmark.sh baseline                                   # 3 runs, full year 2024
-#   ./scripts/benchmark.sh m1-cache 5 "/data/yellow_tripdata_2024-0[1-3].parquet"
-#   ./scripts/benchmark.sh amostra 3 "/data/yellow_tripdata_2024-*.parquet" -- --sample 0.1
+#   ./scripts/benchmark.sh baseline                                   # 3 runs, full year 2015
+#   ./scripts/benchmark.sh m1-cache 5 "/data/yellow_tripdata_2015-0[1-3].parquet"
+#   ./scripts/benchmark.sh amostra 3 "/data/yellow_tripdata_2015-*.parquet" -- --sample 0.1
 #
 # Results:
 #   benchmarks/results.csv                         one line per run (accumulates across benchmarks)
@@ -19,7 +19,7 @@ export MSYS_NO_PATHCONV=1
 
 LABEL=${1:?"Indica uma etiqueta para esta corrida (ex: baseline)"}
 RUNS=${2:-3}
-DATA=${3:-"/data/yellow_tripdata_2024-*.parquet"}
+DATA=${3:-"/data/yellow_tripdata_2015-*.parquet"}
 shift $(( $# < 3 ? $# : 3 ))
 [ "$1" == "--" ] && shift
 EXTRA_ARGS=("$@")

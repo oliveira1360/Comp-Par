@@ -21,7 +21,7 @@ class O1V0Baseline : Analysis {
     private val kmPerMile = 1.60934
 
     override fun run(input: AnalysisInput): Dataset<Row> {
-        println("\n--- [O1] Deteção de Anomalias de Tarifa (Fare Anomaly Detection) ---")
+        println("\n--- [O1] Fare Anomaly Detection ---")
 
         // 1. Derive the time columns and the fare per km
         val dfWithMetrics = input.trips
@@ -71,7 +71,7 @@ class O1V0Baseline : Analysis {
         anomalyRatesDf.show(30, false)
 
         val totalAnomalies = dfFlagged.filter(sf.col("is_anomaly").equalTo(true)).count()
-        println(String.format("[O1] Total de viagens sinalizadas como anomalias (> 3σ): %,d", totalAnomalies))
+        println(String.format("[O1] Total trips flagged as anomalies (> 3σ): %,d", totalAnomalies))
 
         return anomalyRatesDf
     }

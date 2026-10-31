@@ -25,8 +25,8 @@ object SparkUtils {
 
         // Memory settings and recommended optimizations
         builder = builder
-            .config("spark.driver.memory", "1536m")
-            .config("spark.executor.memory", "1024m")
+            .config("spark.driver.memory", "2g")
+            .config("spark.executor.memory", "2g")
             .config("spark.ui.showConsoleProgress", "false")
             .config("spark.sql.adaptive.enabled", "true")
 
@@ -37,30 +37,10 @@ object SparkUtils {
     }
 
     /**
-     * Defines the explicit schema for the TLC Yellow Taxi data.
-     * Avoids the need for inferSchema and guarantees consistent types.
-     */
-    fun getRawSchema(): StructType = StructType(
-        arrayOf(
-            StructField.apply("tpep_pickup_datetime", DataTypes.TimestampType, true, Metadata.empty()),
-            StructField.apply("tpep_dropoff_datetime", DataTypes.TimestampType, true, Metadata.empty()),
-            StructField.apply("PULocationID", DataTypes.IntegerType, true, Metadata.empty()),
-            StructField.apply("DOLocationID", DataTypes.IntegerType, true, Metadata.empty()),
-            StructField.apply("passenger_count", DataTypes.DoubleType, true, Metadata.empty()),
-            StructField.apply("trip_distance", DataTypes.DoubleType, true, Metadata.empty()),
-            StructField.apply("RatecodeID", DataTypes.DoubleType, true, Metadata.empty()),
-            StructField.apply("payment_type", DataTypes.LongType, true, Metadata.empty()),
-            StructField.apply("fare_amount", DataTypes.DoubleType, true, Metadata.empty()),
-            StructField.apply("tip_amount", DataTypes.DoubleType, true, Metadata.empty()),
-            StructField.apply("total_amount", DataTypes.DoubleType, true, Metadata.empty())
-        )
-    )
-
-    /**
      * Loads the zone lookup table (taxi_zone_lookup.csv).
      */
     fun loadZoneLookup(spark: SparkSession, lookupPath: String): Dataset<Row> {
-        println("\n[Zones] A carregar tabela de zonas de: $lookupPath")
+        println("\n[Zones] Loading zone lookup table from: $lookupPath")
         return spark.read()
             .option("header", "true")
             .option("inferSchema", "true")
