@@ -2,11 +2,11 @@ package compar
 
 import compar.config.CliArgs
 import compar.config.parseArgs
-import compar.ops.m1.M1V0Baseline
-import compar.ops.m2.M2V0Baseline
-import compar.ops.m3.M3V0Baseline
-import compar.ops.o1.O1V0Baseline
-import compar.ops.o4.O4V0Baseline
+import compar.ops.m1.*
+import compar.ops.m2.*
+import compar.ops.m3.*
+import compar.ops.o1.*
+import compar.ops.o4.*
 import compar.profiler.SparkProfiler
 import compar.runner.PipelineRunner
 import compar.util.SparkUtils
@@ -27,7 +27,8 @@ fun main(args: Array<String>) {
             spark = spark,
             cliArgs = cliArgs,
             profiler = profiler,
-            m1 = M1V0Baseline(),
+             m1 = M1V3(),
+            //m1 = M1V0Baseline(),
             m2 = M2V0Baseline(),
             m3 = M3V0Baseline(),
             o1 = O1V0Baseline(),
