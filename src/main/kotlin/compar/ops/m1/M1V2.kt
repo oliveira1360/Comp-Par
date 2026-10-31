@@ -16,12 +16,13 @@ import org.apache.spark.sql.functions as sf
 class M1V2 : DataLoader {
 
     override fun load(spark: SparkSession, dataPath: String, sampleFraction: Double?): Dataset<Row> {
-        println("\n[M1] Loading data from: $dataPath")
-        var df = castIfNeeded(readTrips(spark, dataPath))
+        val tag = javaClass.simpleName
+        println("\n[$tag] Loading data from: $dataPath")
+        var df = castIfNeeded(readTrips(spark, dataPath), tag)
             .withColumn("year", sf.year(sf.col("tpep_pickup_datetime")))
 
         if (sampleFraction != null && sampleFraction > 0.0 && sampleFraction < 1.0) {
-            println(String.format("[M1] Applying sampling of %.1f%%", sampleFraction * 100.0))
+            println(String.format("[$tag] Applying sampling of %.1f%%", sampleFraction * 100.0))
             df = df.sample(sampleFraction, 42L)
         }
 
@@ -36,7 +37,7 @@ class M1V2 : DataLoader {
             val year = if (row.isNullAt(0)) null else row.getInt(0)
             addToYear(counters, year, row.getInt(1), row.getLong(2))
         }
-        printCleaningStats(counters)
+        printCleaningStats(counters, tag)
 
         return df.filter(validRecord)
     }

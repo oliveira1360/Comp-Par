@@ -18,7 +18,8 @@ import org.apache.spark.sql.functions as sf
 class M2V2 : Analysis {
 
     override fun run(input: AnalysisInput): Dataset<Row> {
-        println("\n--- [M2] Temporal Demand Analysis (v2) ---")
+        val tag = javaClass.simpleName
+        println("\n--- [$tag] Temporal Demand Analysis ---")
 
         val m2Df = input.trips
             .select(*m2TripColumns)
@@ -26,7 +27,7 @@ class M2V2 : Analysis {
             .let(::aggregateTemporalDemand)
             .repartition(sf.col("pickup_borough"))
 
-        writeTemporalDemand(m2Df, input.outputDir)
+        writeTemporalDemand(m2Df, input.outputDir, tag)
 
         return m2Df
     }

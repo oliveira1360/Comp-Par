@@ -21,10 +21,10 @@ else
 fi
 
 echo "====================================================="
-echo " A iniciar o cluster Spark:"
-echo " - Workers: $WORKERS"
-echo " - Memória Spark por Worker: $SPARK_WORKER_MEMORY (Limite Docker: $SPARK_WORKER_CONTAINER_MEM)"
-echo " - vCPUs por Worker: $WORKER_CORES (Limite Docker: $SPARK_WORKER_CPUS vCPUs)"
+echo " Starting Spark cluster:"
+echo " - Workers:                 $WORKERS"
+echo " - Spark Worker Memory:     $SPARK_WORKER_MEMORY (Container limit: $SPARK_WORKER_CONTAINER_MEM)"
+echo " - vCPUs per Worker:        $WORKER_CORES (Container limit: $SPARK_WORKER_CPUS vCPUs)"
 echo "====================================================="
 
 # Ensures it runs from the project root
@@ -34,7 +34,7 @@ mkdir -p data output
 docker compose -f docker/docker-compose.yml up -d --scale spark-worker="${WORKERS}"
 
 echo "====================================================="
-echo " Cluster Spark iniciado com sucesso!"
+echo " Spark cluster started successfully!"
 echo " - Spark Master UI:  http://localhost:8080"
 echo " - JupyterLab:       http://localhost:8888/?token=compar"
 echo " - Spark App UI:     http://localhost:4040"

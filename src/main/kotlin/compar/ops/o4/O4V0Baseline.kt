@@ -20,7 +20,7 @@ class O4V0Baseline(
 ) : Analysis {
 
     override fun run(input: AnalysisInput): Dataset<Row> {
-        println("\n--- [O4] Classificação de Tipo de Viagem (Trip-Type Classification) ---")
+        println("\n--- [O4] Trip-Type Classification ---")
 
         val dfPrepared = input.trips
             .withColumn("hour_of_day", sf.hour(sf.col("tpep_pickup_datetime")))

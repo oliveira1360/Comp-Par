@@ -12,65 +12,65 @@ cd "$(dirname "$0")/.." || exit 1
 show_help() {
     cat << 'EOF'
 ================================================================================
-  NYC Yellow Taxi Analytics - Submissão de Job Spark (scripts/submit_job.sh)
+  NYC Yellow Taxi Analytics - Spark Job Submission (scripts/submit_job.sh)
 ================================================================================
 
-Uso:
-  ./scripts/submit_job.sh [opções do script] [argumentos do pipeline...]
+Usage:
+  ./scripts/submit_job.sh [script options] [pipeline arguments...]
 
-Opções do Script:
-  -h, --help, help        Mostra esta mensagem de ajuda detalhada e termina.
-  --skip-build, --no-build Não compila o JAR com Gradle antes de submeter
-                          (útil para testes rápidos se o JAR já estiver compilado).
+Script Options:
+  -h, --help, help        Show this detailed help message and exit.
+  --skip-build, --no-build Do not compile the JAR with Gradle before submitting
+                          (useful for faster iteration if the JAR is already built).
 
-Argumentos do Pipeline Kotlin (MainKt):
-  --ops <M1,M2,...>       Lista de operações a executar separadas por vírgula.
-                          Operações disponíveis: M1, M2, M3, O1, O4
+Kotlin Pipeline Arguments (MainKt):
+  --ops <M1,M2,...>       Comma-separated list of operations to execute.
+                          Available operations: M1, M2, M3, O1, O4
                           Default: M1,M2,M3,O1,O4
-                          Exemplo só M1:         --ops M1
-                          Exemplo M1 e O1:       --ops M1,O1
-                          Exemplo M1, M2 e M3:   --ops M1,M2,M3
+                          Example M1 only:       --ops M1
+                          Example M1 and O1:     --ops M1,O1
+                          Example M1, M2, M3:    --ops M1,M2,M3
 
-  --sample <fraction>     Fração de amostragem dos dados (entre 0.0 e 1.0).
-                          Default: 1.0 (processa o dataset completo)
-                          Exemplo 0.1% (~3k):    --sample 0.001
-                          Exemplo 1%:            --sample 0.01
-                          Exemplo 10%:           --sample 0.1
+  --sample <fraction>     Data sampling fraction (between 0.0 and 1.0).
+                          Default: 1.0 (processes complete dataset)
+                          Example 0.1% (~3k):    --sample 0.001
+                          Example 1%:            --sample 0.01
+                          Example 10%:           --sample 0.1
 
-  --profile               Ativa o SparkProfiler (mede tempos de stages, shuffle e memória).
-  --data <path>           Caminho para ficheiro(s) Parquet de entrada no Docker.
+  --profile               Enable SparkProfiler (measures stage time, shuffle, and memory).
+  --data <path>           Path to input Parquet file(s) in Docker.
                           Default: /data/yellow_tripdata_2015-01.parquet
-                          Suporta padrões glob, ex: "/data/yellow_tripdata_2015-*.parquet"
+                          Supports glob patterns, e.g.: "/data/yellow_tripdata_2015-*.parquet"
 
-  --lookup <path>         Caminho para o ficheiro taxi_zone_lookup.csv.
+  --lookup <path>         Path to taxi_zone_lookup.csv in Docker.
                           Default: /data/taxi_zone_lookup.csv
 
-  --output <path>         Diretoria de destino para os resultados Parquet no Docker.
+  --output <path>         Output directory for Parquet results in Docker.
                           Default: /output
 
-  --export-metrics <path> Caminho JSON para exportar o relatório do profiler.
+  --export-metrics <path> JSON file path to export profiler metrics report.
                           Default: /output/profiling_report.json
 
-  --master <url>          URL do Spark Master (default: spark://spark-master:7077).
+  --master <url>          Spark Master URL (default: spark://spark-master:7077).
 
-Exemplos Práticos:
-  1. Teste super rápido apenas do M1 com 0.1% dos dados:
+Examples:
+  1. Quick test of M1 with 0.1% of data:
      ./scripts/submit_job.sh --sample 0.001 --ops M1
 
-  2. Teste do M1 e O1 com profiler ativado e 1% dos dados:
+  2. Test M1 and O1 with profiler enabled and 1% of data:
      ./scripts/submit_job.sh --sample 0.01 --profile --ops M1,O1
 
-  3. Executar as 3 operações obrigatórias (M1, M2, M3) no mês 01:
+  3. Run the 3 mandatory operations (M1, M2, M3) on month 01:
      ./scripts/submit_job.sh --ops M1,M2,M3
 
-  4. Executar com profiling sobre todos os ficheiros de 2024:
-     ./scripts/submit_job.sh --data "/data/yellow_tripdata_2024-*.parquet" --profile
+  4. Run with profiling on all files of 2015:
+     ./scripts/submit_job.sh --data "/data/yellow_tripdata_2015-*.parquet" --profile
 
-  5. Submeter sem recompilar o JAR (mais rápido em testes iterativos):
+  5. Submit without rebuilding the JAR:
      ./scripts/submit_job.sh --skip-build --sample 0.01 --ops M1
 
-Dica (Execução Local no Host sem Docker):
-  Podes correr diretamente no teu computador via Gradle:
+Local Execution (Host without Docker):
+  Run directly on host via Gradle:
      ./gradlew run --args="--master local[*] --sample 0.01 --profile --ops M1"
 ================================================================================
 EOF
@@ -104,23 +104,23 @@ JAR_PATH="build/libs/nyc-taxi-analytics.jar"
 
 if [ "$SKIP_BUILD" = true ]; then
     if [ ! -f "$JAR_PATH" ]; then
-        echo "Aviso: '$JAR_PATH' não encontrado. A compilar com Gradle..."
+        echo "[Warning] '$JAR_PATH' not found. Compiling with Gradle..."
         SKIP_BUILD=false
     else
-        echo "A ignorar compilação com Gradle (--skip-build ativo)..."
+        echo "[Info] Skipping Gradle build (--skip-build active)..."
     fi
 fi
 
 if [ "$SKIP_BUILD" = false ]; then
     if [ -x "./gradlew" ]; then
         GRADLE_OUTPUT=$(./gradlew jar --quiet 2>&1) || {
-            echo "Erro na compilação Gradle:"
+            echo "[Error] Gradle compilation failed:"
             echo "$GRADLE_OUTPUT"
             exit 1
         }
     else
         GRADLE_OUTPUT=$(./gradlew.bat jar --quiet 2>&1) || {
-            echo "Erro na compilação Gradle:"
+            echo "[Error] Gradle compilation failed:"
             echo "$GRADLE_OUTPUT"
             exit 1
         }
@@ -129,10 +129,10 @@ fi
 
 if ! docker ps --format '{{.Names}}' | grep -qx spark-master; then
     echo "================================================================================"
-    echo "Erro: O contentor 'spark-master' não está a correr!"
-    echo "Inicia o cluster Spark antes de submeter o job:"
+    echo "Error: Container 'spark-master' is not running!"
+    echo "Start the Spark cluster before submitting a job:"
     echo "  ./scripts/start_cluster.sh"
-    echo "  (ou: docker compose -f docker/docker-compose.yml up -d)"
+    echo "  (or: docker compose -f docker/docker-compose.yml up -d)"
     echo "================================================================================"
     exit 1
 fi
@@ -165,7 +165,7 @@ if [ "$HAS_OUTPUT" = false ]; then
     DEFAULT_ARGS+=(--output "/output")
 fi
 
-echo "A submeter job Spark (Kotlin) no spark-master..."
+echo "Submitting Spark job (Kotlin) to spark-master..."
 
 docker exec $TTY_FLAG spark-master /opt/spark/bin/spark-submit \
     --class compar.MainKt \

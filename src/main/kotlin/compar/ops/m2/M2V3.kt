@@ -21,7 +21,7 @@ import org.apache.spark.sql.functions as sf
 class M2V3 : Analysis {
 
     override fun run(input: AnalysisInput): Dataset<Row> {
-        println("\n--- [M2] Análise de Procura Temporal (v3) ---")
+        println("\n--- [M2] Temporal Demand Analysis (v3) ---")
 
         // Bit layout (17 bits total):
         // [ bits 16..8: PULocationID (1..263, 9 bits) | bits 7..5: day_of_week (1..7, 3 bits) | bits 4..0: hour_of_day (0..23, 5 bits) ]

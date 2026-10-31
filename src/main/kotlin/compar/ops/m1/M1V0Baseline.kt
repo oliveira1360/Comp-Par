@@ -23,7 +23,8 @@ import org.apache.spark.sql.types.DataTypes
 class M1V0Baseline : DataLoader {
 
     override fun load(spark: SparkSession, dataPath: String, sampleFraction: Double?): Dataset<Row> {
-        println("\n[M1] Loading data from: $dataPath")
+        val tag = javaClass.simpleName
+        println("\n[$tag] Loading data from: $dataPath")
         val dfRaw = spark.read().parquet(dataPath)
 
         var df = dfRaw
@@ -37,12 +38,12 @@ class M1V0Baseline : DataLoader {
             .withColumn("year", sf.year(sf.col("tpep_pickup_datetime")))
 
         if (sampleFraction != null && sampleFraction > 0.0 && sampleFraction < 1.0) {
-            println(String.format("[M1] Applying sampling of %.1f%%", sampleFraction * 100.0))
+            println(String.format("[$tag] Applying sampling of %.1f%%", sampleFraction * 100.0))
             df = df.sample(sampleFraction, 42L)
         }
 
         val totalRecords = df.count()
-        println(String.format("[M1] Total records read: %,d", totalRecords))
+        println(String.format("[$tag] Total records read: %,d", totalRecords))
 
         // Invalidity criteria (M1)
         val condInvalidFare = sf.col("fare_amount").leq(0).or(sf.col("fare_amount").isNull)
@@ -67,7 +68,7 @@ class M1V0Baseline : DataLoader {
             .withColumn("rem_location", sf.`when`(condInvalidLocation, 1).otherwise(0))
 
         // Per-year removal statistics per criterion (M1 requirement)
-        println("\n--- [M1] Yearly Cleaning Statistics (Removed Records) ---")
+        println("\n--- [$tag] Yearly Cleaning Statistics (Removed Records) ---")
         val cleaningStats = dfFlagged
             .groupBy("year")
             .agg(
@@ -96,8 +97,8 @@ class M1V0Baseline : DataLoader {
         val validRecords = dfClean.count()
         val removedRecords = totalRecords - validRecords
         val pctRemoved = if (totalRecords > 0) (removedRecords.toDouble() / totalRecords.toDouble() * 100.0) else 0.0
-        println(String.format("[M1] Valid records: %,d (%.2f%%)", validRecords, 100.0 - pctRemoved))
-        println(String.format("[M1] Total removed records: %,d (%.2f%%)", removedRecords, pctRemoved))
+        println(String.format("[$tag] Valid records: %,d (%.2f%%)", validRecords, 100.0 - pctRemoved))
+        println(String.format("[$tag] Total removed records: %,d (%.2f%%)", removedRecords, pctRemoved))
 
         return dfClean
     }

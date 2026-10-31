@@ -21,14 +21,15 @@ import org.apache.spark.sql.functions as sf
 class M2V0Baseline : Analysis {
 
     override fun run(input: AnalysisInput): Dataset<Row> {
-        println("\n--- [M2] Temporal Demand Analysis ---")
+        val tag = javaClass.simpleName
+        println("\n--- [$tag] Temporal Demand Analysis ---")
 
         val m2Df = input.trips
             .join(pickupZones(input.zones), "PULocationID")
             .let(::aggregateTemporalDemand)
             .orderBy("pickup_borough", "day_of_week", "hour_of_day")
 
-        writeTemporalDemand(m2Df, input.outputDir)
+        writeTemporalDemand(m2Df, input.outputDir, tag)
 
         return m2Df
     }
@@ -54,9 +55,9 @@ internal fun aggregateTemporalDemand(df: Dataset<Row>): Dataset<Row> = df
         sf.avg("trip_distance").alias("mean_trip_distance")
     )
 
-internal fun writeTemporalDemand(df: Dataset<Row>, outputDir: String) {
+internal fun writeTemporalDemand(df: Dataset<Row>, outputDir: String, tag: String? = null) {
     val m2OutputPath = "$outputDir/m2_temporal_demand"
-    println("[M2] Writing partitioned output by pickup_borough to: $m2OutputPath")
+    println("[$tag] Writing partitioned output by pickup_borough to: $m2OutputPath")
     df.write()
         .mode(SaveMode.Overwrite)
         .partitionBy("pickup_borough")

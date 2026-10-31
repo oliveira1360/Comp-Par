@@ -48,7 +48,7 @@ internal fun readTrips(spark: SparkSession, dataPath: String): Dataset<Row> =
  * Checks the schema once and casts only the columns the operations can't use as they are.
  * This has no per-row cost for the columns that are already usable.
  */
-internal fun castIfNeeded(input: Dataset<Row>): Dataset<Row> {
+internal fun castIfNeeded(input: Dataset<Row>, tag: String? = null): Dataset<Row> {
     val types = input.schema().fields().associate { it.name() to it.dataType() }
     val castedColumns = mutableListOf<String>()
     var result = input
@@ -66,7 +66,7 @@ internal fun castIfNeeded(input: Dataset<Row>): Dataset<Row> {
         }
     }
 
-    println("[M1] Casted columns: ${castedColumns.ifEmpty { listOf("none") }.joinToString(", ")}")
+    println("[$tag] Casted columns: ${castedColumns.ifEmpty { listOf("none") }.joinToString(", ")}")
     return result
 }
 
@@ -84,8 +84,8 @@ internal fun addToYear(counters: MutableMap<Int?, LongArray>, year: Int?, mask: 
  * Prints the per-year table and totals. Each row holds: total, the 5 criteria, valid.
  * The table is formatted on the driver, because show() on a DataFrame costs about 1 s just to generate code.
  */
-internal fun printCleaningStats(counters: Map<Int?, LongArray>) {
-    println("\n--- [M1] Yearly Cleaning Statistics (Removed Records) ---")
+internal fun printCleaningStats(counters: Map<Int?, LongArray>, tag: String? = null) {
+    println("\n--- [$tag] Yearly Cleaning Statistics (Removed Records) ---")
     val header = listOf(
         "year", "total_records", "invalid_fare", "invalid_distance", "invalid_passenger",
         "invalid_time", "invalid_location", "valid_records"
@@ -106,8 +106,8 @@ internal fun printCleaningStats(counters: Map<Int?, LongArray>) {
     val validRecords = counters.values.sumOf { it[6] }
     val removedRecords = totalRecords - validRecords
     val pctRemoved = if (totalRecords > 0) (removedRecords.toDouble() / totalRecords.toDouble() * 100.0) else 0.0
-    println(String.format("[M1] Total records read: %,d", totalRecords))
-    println(String.format("[M1] Valid records: %,d (%.2f%%)", validRecords, 100.0 - pctRemoved))
-    println(String.format("[M1] Total removed records: %,d (%.2f%%)", removedRecords, pctRemoved))
+    println(String.format("[$tag] Total records read: %,d", totalRecords))
+    println(String.format("[$tag] Valid records: %,d (%.2f%%)", validRecords, 100.0 - pctRemoved))
+    println(String.format("[$tag] Total removed records: %,d (%.2f%%)", removedRecords, pctRemoved))
 }
 

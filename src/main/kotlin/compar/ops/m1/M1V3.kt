@@ -41,8 +41,9 @@ class M1V3 : DataLoader {
             return M1V2().load(spark, dataPath, sampleFraction)
         }
 
-        println("\n[M1] Loading data from: $dataPath")
-        println("[M1] Casted columns: none")
+        val tag = javaClass.simpleName
+        println("\n[$tag] Loading data from: $dataPath")
+        println("[$tag] Casted columns: none")
         val files = raw.inputFiles().toList()
         val jsc = JavaSparkContext.fromSparkContext(spark.sparkContext())
         val perFile = jsc.parallelize(files, files.size).mapPartitions(ScanFiles(expectedTypes.keys.toList())).collect()
@@ -62,7 +63,7 @@ class M1V3 : DataLoader {
                 if (counts[mask] != 0L) addToYear(counters, year, mask, counts[mask])
             }
         }
-        printCleaningStats(counters)
+        printCleaningStats(counters, tag)
 
         return raw.withColumn("year", sf.year(sf.col("tpep_pickup_datetime"))).filter(validRecord)
     }

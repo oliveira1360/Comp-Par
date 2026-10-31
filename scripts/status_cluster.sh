@@ -3,5 +3,5 @@
 
 cd "$(dirname "$0")/.." || exit 1
 
-echo "--- Estado dos Contentores do Cluster Spark ---"
+echo "--- Spark Cluster Container Status ---"
 docker compose -f docker/docker-compose.yml ps

@@ -20,14 +20,14 @@ LOOKUP_URL="https://d37ci6vzurychx.cloudfront.net/misc/taxi_zone_lookup.csv"
 
 # Ensures the zone lookup table is present
 if [ ! -f "data/taxi_zone_lookup.csv" ]; then
-    echo " [↓] A descarregar taxi_zone_lookup.csv..."
+    echo "Downloading taxi_zone_lookup.csv..."
     curl -f -L -o "data/taxi_zone_lookup.csv" "$LOOKUP_URL"
-    echo " [✓] taxi_zone_lookup.csv descarregado."
+    echo "taxi_zone_lookup.csv downloaded."
 fi
 
 echo "=========================================================="
-echo " Descarregar Yellow Taxi Parquets para o ano $YEAR (Meses $START_MONTH a $END_MONTH)"
-echo " Destino: data/"
+echo " Downloading Yellow Taxi Parquet files for year $YEAR (Months $START_MONTH to $END_MONTH)"
+echo " Destination: data/"
 echo "=========================================================="
 
 for m in $(seq "$START_MONTH" "$END_MONTH"); do
@@ -37,19 +37,19 @@ for m in $(seq "$START_MONTH" "$END_MONTH"); do
     URL="${BASE_URL}/${FILENAME}"
 
     if [ -f "$TARGET" ]; then
-        echo " [✓] $FILENAME já existe em data/. A saltar..."
+        echo " $FILENAME already exists in data/. Skipping..."
     else
-        echo " [↓] A descarregar $FILENAME de $URL..."
+        echo " Downloading $FILENAME from $URL..."
         if curl -f -L -o "$TARGET" "$URL"; then
-            echo " [✓] Concluído: $FILENAME ($(du -h "$TARGET" | cut -f1))"
+            echo " Completed: $FILENAME ($(du -h "$TARGET" | cut -f1))"
         else
-            echo " [!] Erro ou ficheiro não disponível para ${YEAR}-${MONTH_PAD}"
+            echo " Error or file not available for ${YEAR}-${MONTH_PAD}"
             rm -f "$TARGET"
         fi
     fi
 done
 
 echo "=========================================================="
-echo " Ficheiros Parquet em data/:"
-ls -lh data/*.parquet 2>/dev/null || echo "(Nenhum ficheiro encontrado)"
+echo " Parquet files in data/:"
+ls -lh data/*.parquet 2>/dev/null || echo "(No files found)"
 echo "=========================================================="
