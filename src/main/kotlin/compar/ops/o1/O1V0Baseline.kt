@@ -9,70 +9,90 @@ import org.apache.spark.sql.expressions.Window
 import org.apache.spark.sql.functions as sf
 
 /**
- * O1 — Fare Anomaly Detection:
- * 1. Computes the fare per km of each trip.
- * 2. Per (PULocationID, hour_of_day) bucket, computes the mean and standard deviation (σ).
- * 3. Flags trips whose fare per km exceeds mean + 3σ.
- * 4. Compares anomaly rates between weekdays and weekends,
- *    broken down by payment_type and pickup_borough.
+ * O1 — Fare Anomaly Detection (Baseline):
+ * 1. Derives temporal metrics and fare per km:
+ *    fare_per_km = fare_amount / (trip_distance * 1.60934)
+ * 2. Per (PULocationID, hour_of_day) bucket, computes the mean (μ) and standard deviation (σ)
+ *    over an unpartitioned Spark Window:
+ *    - Mean: μ = (1 / N) * Σ x_i
+ *    - Sample Stddev: σ = sqrt((1 / (N - 1)) * Σ (x_i - μ)^2)
+ * 3. Flags trips as anomalous if fare_per_km > μ + 3σ (where σ > 0).
+ * 4. Joins with the zone lookup table to obtain pickup_borough.
+ * 5. Compares weekday vs. weekend anomaly rates broken down by payment_type and pickup_borough:
+ *    anomaly_rate_pct = (anomaly_trips / total_trips) * 100%
+ * Writes the resulting rates in Parquet format to output/o1_fare_anomalies.
  */
 class O1V0Baseline : Analysis {
-
-    private val kmPerMile = 1.60934
 
     override fun run(input: AnalysisInput): Dataset<Row> {
         println("\n--- [$tag] Fare Anomaly Detection ---")
 
-        // 1. Derive the time columns and the fare per km
+        // 1. Derive temporal columns and fare per km (baseline with chained withColumn calls)
         val dfWithMetrics = input.trips
-            .withColumn("hour_of_day", sf.hour(sf.col("tpep_pickup_datetime")))
-            .withColumn("day_of_week", sf.dayofweek(sf.col("tpep_pickup_datetime")))
-            .withColumn(
-                "day_type",
-                sf.`when`(sf.col("day_of_week").isin(1, 7), sf.lit("Weekend")).otherwise(sf.lit("Weekday"))
-            )
-            .withColumn(
-                "fare_per_km",
-                sf.col("fare_amount").divide(sf.col("trip_distance").multiply(kmPerMile))
-            )
+            .withColumn(COL_HOUR_OF_DAY, sf.hour(sf.col(COL_PICKUP_DATETIME)))
+            .withColumn(COL_DAY_OF_WEEK, sf.dayofweek(sf.col(COL_PICKUP_DATETIME)))
+            .withColumn(COL_DAY_TYPE, dayTypeExpr())
+            .withColumn(COL_FARE_PER_KM, farePerKm())
 
-        // 2. Window partition per (PULocationID, hour_of_day) bucket to compute mean and sigma
-        val wBucket = Window.partitionBy("PULocationID", "hour_of_day")
+        // 2 & 3. Compute bucket statistics (μ, σ) via Window and flag anomalous trips (> μ + 3σ)
+        val dfFlagged = flagAnomaliesWithWindow(dfWithMetrics)
 
-        val dfWithBucketStats = dfWithMetrics
-            .withColumn("mean_fare_per_km", sf.avg("fare_per_km").over(wBucket))
-            .withColumn("stddev_fare_per_km", sf.stddev("fare_per_km").over(wBucket))
+        // 4. Join with the zone lookup table to obtain pickup_borough
+        val dfWithBorough = dfFlagged.join(pickupZones(input.zones), COL_PU_LOCATION_ID)
 
-        // 3. Flag anomalous trips: fare_per_km > mean + 3*stddev
-        val thresholdExpr = sf.col("mean_fare_per_km").plus(sf.col("stddev_fare_per_km").multiply(3.0))
-        val isAnomalyExpr = sf.coalesce(
-            sf.col("stddev_fare_per_km").gt(0.0).and(sf.col("fare_per_km").gt(thresholdExpr)),
-            sf.lit(false)
-        )
+        // 5. Compare weekday vs. weekend anomaly rates by payment_type and pickup_borough
+        val anomalyRatesDf = aggregateAnomalyRates(dfWithBorough)
 
-        val dfFlagged = dfWithBucketStats.withColumn("is_anomaly", isAnomalyExpr)
-
-        // 4. Join with the zone table to get the pickup borough
-        val dfWithBorough = dfFlagged.join(pickupZones(input.zones), "PULocationID")
-
-        // 5. Compare weekday and weekend anomaly rates, broken down by payment_type and pickup_borough
-        val anomalyRatesDf = dfWithBorough
-            .groupBy("pickup_borough", "payment_type", "day_type")
-            .agg(
-                sf.count("*").alias("total_trips"),
-                sf.sum(sf.`when`(sf.col("is_anomaly"), 1).otherwise(0)).alias("anomaly_trips"),
-                sf.round(
-                    sf.avg(sf.`when`(sf.col("is_anomaly"), 1.0).otherwise(0.0)).multiply(100.0),
-                    2
-                ).alias("anomaly_rate_pct")
-            )
-            .orderBy("pickup_borough", "payment_type", "day_type")
-
-        anomalyRatesDf.show(30, false)
-
-        val totalAnomalies = dfFlagged.filter(sf.col("is_anomaly").equalTo(true)).count()
-        println(String.format("[$tag] Total trips flagged as anomalies (> 3σ): %,d", totalAnomalies))
+        writeAnomalyRates(anomalyRatesDf, input.outputDir)
 
         return anomalyRatesDf
     }
 }
+
+/**
+ * Computes mean (μ) and sample standard deviation (σ) of fare_per_km per (PULocationID, hour_of_day) bucket
+ * using Spark Window functions, and flags anomalous records exceeding μ + 3σ.
+ *
+ * Mathematical formulas:
+ * - Metric: x_i = fare_amount / (trip_distance * 1.60934)
+ * - Bucket Mean: μ = (1 / N) * Σ x_i
+ * - Sample Standard Deviation: σ = sqrt((1 / (N - 1)) * Σ (x_i - μ)^2)
+ * - Anomaly Condition: is_anomaly = (x_i > μ + 3 * σ) ∧ (σ > 0)
+ */
+internal fun flagAnomaliesWithWindow(df: Dataset<Row>): Dataset<Row> {
+    val wBucket = Window.partitionBy(COL_PU_LOCATION_ID, COL_HOUR_OF_DAY)
+
+    val withBucketStats = df
+        .withColumn(COL_MEAN_FARE_PER_KM, sf.avg(COL_FARE_PER_KM).over(wBucket))
+        .withColumn(COL_STDDEV_FARE_PER_KM, sf.stddev(COL_FARE_PER_KM).over(wBucket))
+
+    val isAnomaly = anomalyCondition(
+        fareCol = sf.col(COL_FARE_PER_KM),
+        meanCol = sf.col(COL_MEAN_FARE_PER_KM),
+        stddevCol = sf.col(COL_STDDEV_FARE_PER_KM)
+    )
+
+    return withBucketStats.withColumn(COL_IS_ANOMALY, isAnomaly)
+}
+
+/**
+ * Aggregates trips by (pickup_borough, payment_type, day_type) to compute total volume,
+ * anomalous trip volume, and the percentage anomaly rate.
+ *
+ * Mathematical formulas:
+ * - Total Trips: N_group = Σ 1
+ * - Anomalous Trips: N_anomaly = Σ [is_anomaly == true]
+ * - Anomaly Rate (%): anomaly_rate_pct = round((N_anomaly / N_group) * 100, 2)
+ *   Computed via Spark as round(avg(when(is_anomaly, 1.0).otherwise(0.0)) * 100.0, 2).
+ */
+internal fun aggregateAnomalyRates(dfWithBorough: Dataset<Row>): Dataset<Row> = dfWithBorough
+    .groupBy(COL_PICKUP_BOROUGH, COL_PAYMENT_TYPE, COL_DAY_TYPE)
+    .agg(
+        sf.count("*").alias(COL_TOTAL_TRIPS),
+        sf.sum(sf.`when`(sf.col(COL_IS_ANOMALY), 1).otherwise(0)).alias(COL_ANOMALY_TRIPS),
+        sf.round(
+            sf.avg(sf.`when`(sf.col(COL_IS_ANOMALY), 1.0).otherwise(0.0)).multiply(100.0),
+            2
+        ).alias(COL_ANOMALY_RATE_PCT)
+    )
+    .orderBy(COL_PICKUP_BOROUGH, COL_PAYMENT_TYPE, COL_DAY_TYPE)

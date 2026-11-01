@@ -105,7 +105,7 @@ fun parseArgs(args: Array<String>): CliArgs {
                       --m1 <version>          M1 implementation version (v0..v3, default: v3)
                       --m2 <version>          M2 implementation version (v0..v7, default: v7)
                       --m3 <version>          M3 implementation version (v0..v1, default: v0)
-                      --o1 <version>          O1 implementation version (v0..v1, default: v0)
+                      --o1 <version>          O1 implementation version (v0..v7, default: v0)
                       --o4 <version>          O4 implementation version (v0..v1, default: v0)
                       --export-metrics <path> JSON file path to export profiler metrics (default: output/profiling_report.json)
                     """.trimIndent()
