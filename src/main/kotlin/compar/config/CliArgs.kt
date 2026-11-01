@@ -13,6 +13,11 @@ data class CliArgs(
     val sample: Double? = null,
     val profile: Boolean = false,
     val operations: List<String> = listOf("M1", "M2", "M3", "O1", "O4"),
+    val m1Version: String = "v3",
+    val m2Version: String = "v7",
+    val m3Version: String = "v0",
+    val o1Version: String = "v0",
+    val o4Version: String = "v0",
     val exportMetricsPath: String? = "output/profiling_report.json"
 )
 
@@ -24,6 +29,11 @@ fun parseArgs(args: Array<String>): CliArgs {
     var sample: Double? = null
     var profile = false
     var operations = listOf("M1", "M2", "M3", "O1", "O4")
+    var m1Version = "v3"
+    var m2Version = "v7"
+    var m3Version = "v0"
+    var o1Version = "v0"
+    var o4Version = "v0"
     var exportMetricsPath: String? = "output/profiling_report.json"
 
     var i = 0
@@ -57,6 +67,26 @@ fun parseArgs(args: Array<String>): CliArgs {
                 require(i + 1 < args.size) { "Parameter --ops requires a comma-separated list (e.g. M1,M2,O1)." }
                 operations = args[++i].split(",").map { it.trim().uppercase() }.filter { it.isNotEmpty() }
             }
+            "--m1" -> {
+                require(i + 1 < args.size) { "Parameter --m1 requires a version (e.g. v0..v3)." }
+                m1Version = args[++i]
+            }
+            "--m2" -> {
+                require(i + 1 < args.size) { "Parameter --m2 requires a version (e.g. v0..v7)." }
+                m2Version = args[++i]
+            }
+            "--m3" -> {
+                require(i + 1 < args.size) { "Parameter --m3 requires a version (e.g. v0..v1)." }
+                m3Version = args[++i]
+            }
+            "--o1" -> {
+                require(i + 1 < args.size) { "Parameter --o1 requires a version (e.g. v0..v1)." }
+                o1Version = args[++i]
+            }
+            "--o4" -> {
+                require(i + 1 < args.size) { "Parameter --o4 requires a version (e.g. v0..v1)." }
+                o4Version = args[++i]
+            }
             "--export-metrics" -> {
                 require(i + 1 < args.size) { "Parameter --export-metrics requires a file path." }
                 exportMetricsPath = args[++i]
@@ -72,6 +102,11 @@ fun parseArgs(args: Array<String>): CliArgs {
                       --sample <fraction>     Sampling fraction (e.g. 0.1 for 10%)
                       --profile               Enable SparkProfiler for stage, shuffle, and memory metrics
                       --ops <M1,M2,M3,O1,O4>  Operations to execute (default: M1,M2,M3,O1,O4)
+                      --m1 <version>          M1 implementation version (v0..v3, default: v3)
+                      --m2 <version>          M2 implementation version (v0..v7, default: v7)
+                      --m3 <version>          M3 implementation version (v0..v1, default: v0)
+                      --o1 <version>          O1 implementation version (v0..v1, default: v0)
+                      --o4 <version>          O4 implementation version (v0..v1, default: v0)
                       --export-metrics <path> JSON file path to export profiler metrics (default: output/profiling_report.json)
                     """.trimIndent()
                 )
@@ -92,6 +127,11 @@ fun parseArgs(args: Array<String>): CliArgs {
         sample = sample,
         profile = profile,
         operations = operations,
+        m1Version = m1Version,
+        m2Version = m2Version,
+        m3Version = m3Version,
+        o1Version = o1Version,
+        o4Version = o4Version,
         exportMetricsPath = exportMetricsPath
     )
 }

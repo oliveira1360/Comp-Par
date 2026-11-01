@@ -17,7 +17,6 @@ import org.apache.spark.sql.functions as sf
 class M1V1 : DataLoader {
 
     override fun load(spark: SparkSession, dataPath: String, sampleFraction: Double?): Dataset<Row> {
-        val tag = javaClass.simpleName
         println("\n[$tag] Loading data from: $dataPath")
         var df = castIfNeeded(readTrips(spark, dataPath), tag)
             .withColumn("year", sf.year(sf.col("tpep_pickup_datetime")))

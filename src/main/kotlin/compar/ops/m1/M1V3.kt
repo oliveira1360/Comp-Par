@@ -41,7 +41,6 @@ class M1V3 : DataLoader {
             return M1V2().load(spark, dataPath, sampleFraction)
         }
 
-        val tag = javaClass.simpleName
         println("\n[$tag] Loading data from: $dataPath")
         println("[$tag] Casted columns: none")
         val files = raw.inputFiles().toList()

@@ -1,30 +1,130 @@
 #!/usr/bin/env bash
-# Runs the pipeline on the Docker cluster several times (with --profile) and saves the times and result of each run.
-#
-# Usage:
-#   ./scripts/benchmark.sh <LABEL> [N_RUNS] [DATA] [-- extra job arguments]
-# Examples:
-#   ./scripts/benchmark.sh baseline                                   # 3 runs, full year 2015
-#   ./scripts/benchmark.sh m1-cache 5 "/data/yellow_tripdata_2015-0[1-3].parquet"
-#   ./scripts/benchmark.sh amostra 3 "/data/yellow_tripdata_2015-*.parquet" -- --sample 0.1
-#
-# Results:
-#   benchmarks/results.csv                         one line per run (accumulates across benchmarks)
-#   benchmarks/logs/<date>_<label>_run<N>.log      full output of each run
+# Compiles the Kotlin project once (with Gradle) and runs isolated benchmarks across one or more versions
+# on the Docker Spark cluster via `./gradlew benchmark`.
+# Usage: ./scripts/benchmark.sh [--help] [options...]
 
 set -e
 
 # Stops Git Bash (MSYS) from converting container paths (/opt, /apps, /data) to Windows paths
 export MSYS_NO_PATHCONV=1
 
-LABEL=${1:?"Provide a label for this run (e.g. baseline)"}
-RUNS=${2:-3}
-DATA=${3:-"/data/yellow_tripdata_2015-*.parquet"}
-shift $(( $# < 3 ? $# : 3 ))
-[ "$1" == "--" ] && shift
-EXTRA_ARGS=("$@")
-
 cd "$(dirname "$0")/.." || exit 1
+
+show_help() {
+    cat << 'EOF'
+================================================================================
+  NYC Yellow Taxi Analytics - Isolated Cluster Benchmark (scripts/benchmark.sh)
+================================================================================
+
+Usage:
+  ./scripts/benchmark.sh [options...]
+
+Options:
+  -h, --help, help        Show this detailed help message and exit.
+
+  --m1 <versions>         Comma-separated list of M1 versions to test (or "all").
+                          Available: v0, v1, v2, v3 (default: v3)
+                          Example: --m1 v1,v2,v3   or   --m1 all
+
+  --m2 <versions>         Comma-separated list of M2 versions to test (or "all").
+                          Available: v0, v1, v2, v3, v4, v5, v6, v7 (default: v7)
+                          Example: --m2 v4,v5,v6,v7   or   --m2 all
+
+  --m3 <versions>         Comma-separated list of M3 versions to test (or "all").
+                          Available: v0, v1 (default: v0)
+
+  --o1 <versions>         Comma-separated list of O1 versions to test (or "all").
+                          Available: v0, v1 (default: v0)
+
+  --o4 <versions>         Comma-separated list of O4 versions to test (or "all").
+                          Available: v0, v1 (default: v0)
+
+  --ops <M1,M2,...>       Comma-separated list of operations to execute.
+                          If omitted, inferred automatically from the version flags passed
+                          (e.g. passing --m2 v5,v6,v7 automatically sets --ops M2).
+
+  --sample <fraction>     Data sampling fraction (between 0.0 and 1.0).
+                          Example 10%: --sample 0.1
+
+  --data <path>           Path/glob to input Parquet file(s) inside Docker.
+                          Default: /data/yellow_tripdata_2015-*.parquet
+                          All years: --data "/data/yellow_tripdata_*.parquet"
+
+  --runs <N>              Number of isolated repetitions per version (default: 1).
+
+Examples:
+  1. Compare M2 versions v4, v5, v6, v7 on 10% of all years:
+     ./scripts/benchmark.sh --m2 v4,v5,v6,v7 --sample 0.1 --data "/data/yellow_tripdata_*.parquet"
+
+  2. Compare all M2 versions (v0 through v7) on 10% sample:
+     ./scripts/benchmark.sh --m2 all --sample 0.1 --data "/data/yellow_tripdata_*.parquet"
+
+  3. Compare M1 versions (v1, v2, v3) on 2015 data:
+     ./scripts/benchmark.sh --m1 v1,v2,v3
+
+  4. Run 3 isolated repetitions of M2 v7:
+     ./scripts/benchmark.sh --m2 v7 --runs 3 --sample 0.1 --data "/data/yellow_tripdata_*.parquet"
+
+Direct Gradle Invocation:
+  ./gradlew benchmark -Pm2=v4,v5,v6,v7 -Psample=0.1 -Pdata="/data/yellow_tripdata_*.parquet"
+================================================================================
+EOF
+}
+
+GRADLE_PROPS=()
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -h|--help|help)
+            show_help
+            exit 0
+            ;;
+        --m1)
+            GRADLE_PROPS+=("-Pm1=$2")
+            shift 2
+            ;;
+        --m2)
+            GRADLE_PROPS+=("-Pm2=$2")
+            shift 2
+            ;;
+        --m3)
+            GRADLE_PROPS+=("-Pm3=$2")
+            shift 2
+            ;;
+        --o1)
+            GRADLE_PROPS+=("-Po1=$2")
+            shift 2
+            ;;
+        --o4)
+            GRADLE_PROPS+=("-Po4=$2")
+            shift 2
+            ;;
+        --ops|--operations)
+            GRADLE_PROPS+=("-Pops=$2")
+            shift 2
+            ;;
+        --sample)
+            GRADLE_PROPS+=("-Psample=$2")
+            shift 2
+            ;;
+        --data)
+            GRADLE_PROPS+=("-Pdata=$2")
+            shift 2
+            ;;
+        --runs)
+            GRADLE_PROPS+=("-Pruns=$2")
+            shift 2
+            ;;
+        -P*)
+            GRADLE_PROPS+=("$1")
+            shift
+            ;;
+        *)
+            echo "Warning: unknown argument ignored: $1" >&2
+            shift
+            ;;
+    esac
+done
 
 # Ensures JDK 17 is used if the system JDK is Java 25+
 if [ -d "$HOME/.jdks/temurin-17" ] && [ -z "$JAVA_HOME" ]; then
@@ -33,82 +133,16 @@ if [ -d "$HOME/.jdks/temurin-17" ] && [ -z "$JAVA_HOME" ]; then
 fi
 
 if ! docker ps --format '{{.Names}}' | grep -qx spark-master; then
-    echo "Error: Container 'spark-master' is not running. Start the cluster with ./scripts/start_cluster.sh"
+    echo "================================================================================"
+    echo "Error: Container 'spark-master' is not running!"
+    echo "Start the Spark cluster before running benchmarks:"
+    echo "  ./scripts/start_cluster.sh"
+    echo "================================================================================"
     exit 1
 fi
-WORKERS=$(docker ps --format '{{.Names}}' | grep -c spark-worker || true)
 
-echo "Compiling Kotlin project with Gradle..."
 if [ -x "./gradlew" ]; then
-    ./gradlew jar --quiet
+    ./gradlew benchmark --console=plain "${GRADLE_PROPS[@]}"
 else
-    ./gradlew.bat jar --quiet
+    ./gradlew.bat benchmark --console=plain "${GRADLE_PROPS[@]}"
 fi
-
-mkdir -p benchmarks/logs
-CSV=benchmarks/results.csv
-if [ ! -f "$CSV" ]; then
-    echo "timestamp,label,run,data,extra_args,workers,status,total_s,m1_s,m2_s,m3_s,m1_input,m2_input,m3_input,m1_disk_spill,m2_disk_spill,m3_disk_spill,total_records,valid_records,m3_flagged" > "$CSV"
-fi
-
-# Extracts a column from an operation's row in the SparkProfiler table (columns separated by "|")
-profiler_col() {
-    local log=$1 op=$2 col=$3
-    grep -E "^${op} +\|" "$log" | tail -1 | awk -F'|' -v c="$col" '{gsub(/ /, "", $c); print $c}'
-}
-
-# Extracts the number from a line such as "[M1] Valid records: 8,400,459 (87.92%)"
-count_after() {
-    local log=$1 prefix=$2
-    grep -F "$prefix" "$log" | tail -1 | sed -E 's/^[^:]*: *([0-9][0-9,]*).*/\1/' | tr -d ','
-}
-
-echo "=========================================================="
-echo " Benchmark '$LABEL': $RUNS run(s), $WORKERS worker(s)"
-echo " Data: $DATA ${EXTRA_ARGS[*]}"
-echo "=========================================================="
-
-for run in $(seq 1 "$RUNS"); do
-    TS=$(date +%Y%m%d-%H%M%S)
-    LOG="benchmarks/logs/${TS}_${LABEL}_run${run}.log"
-
-    echo " [>] Run $run/$RUNS (log: $LOG)"
-    set +e
-    docker exec spark-master /opt/spark/bin/spark-submit \
-        --class compar.MainKt \
-        --master spark://spark-master:7077 \
-        --deploy-mode client \
-        /apps/nyc-taxi-analytics.jar \
-        --data "$DATA" \
-        --lookup /data/taxi_zone_lookup.csv \
-        --output /data/output \
-        --profile \
-        "${EXTRA_ARGS[@]}" > "$LOG" 2>&1
-    EXIT_CODE=$?
-    set -e
-
-    if [ "$EXIT_CODE" -eq 0 ]; then STATUS=ok; else STATUS="error($EXIT_CODE)"; fi
-
-    TOTAL_S=$(grep -E "(Total pipeline execution time|Tempo total decorrido)" "$LOG" | tail -1 | sed -E 's/.*: ([0-9.,]+)s.*/\1/' | tr ',' '.')
-    ROW="$(date -Iseconds),$LABEL,$run,\"$DATA\",\"${EXTRA_ARGS[*]}\",$WORKERS,$STATUS,$TOTAL_S"
-    for col in 2 8 13; do
-        for op in M1_ingestion_and_cleaning M2_temporal_demand M3_zone_statistics; do
-            ROW="$ROW,$(profiler_col "$LOG" "$op" "$col")"
-        done
-    done
-    ROW="$ROW,$(count_after "$LOG" "[M1] Total records read:")"
-    ROW="$ROW,$(count_after "$LOG" "[M1] Valid records:")"
-    ROW="$ROW,$(count_after "$LOG" "[M3] Total zone-months with volume deviation > 1.5 std:")"
-    echo "$ROW" >> "$CSV"
-
-    echo "     status=$STATUS total=${TOTAL_S:-?}s"
-    if [ "$EXIT_CODE" -ne 0 ]; then
-        echo "     Last error lines:"
-        grep -E "Exception|Error" "$LOG" | head -5 | sed 's/^/       /'
-    fi
-done
-
-echo "=========================================================="
-echo " Results for '$LABEL' (benchmarks/results.csv):"
-grep -E "^[^,]+,${LABEL}," "$CSV" | cut -d, -f3,7-11 | sed 's/^/   run,status,total_s,m1_s,m2_s,m3_s = /'
-echo "=========================================================="

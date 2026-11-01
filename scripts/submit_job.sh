@@ -31,6 +31,12 @@ Kotlin Pipeline Arguments (MainKt):
                           Example M1 and O1:     --ops M1,O1
                           Example M1, M2, M3:    --ops M1,M2,M3
 
+  --m1 <version>          M1 implementation version (v0..v3, default: v3).
+  --m2 <version>          M2 implementation version (v0..v7, default: v7).
+  --m3 <version>          M3 implementation version (v0..v1, default: v0).
+  --o1 <version>          O1 implementation version (v0..v1, default: v0).
+  --o4 <version>          O4 implementation version (v0..v1, default: v0).
+
   --sample <fraction>     Data sampling fraction (between 0.0 and 1.0).
                           Default: 1.0 (processes complete dataset)
                           Example 0.1% (~3k):    --sample 0.001

@@ -20,45 +20,42 @@ import org.apache.spark.sql.functions as sf
 class M2V4 : Analysis {
 
     override fun run(input: AnalysisInput): Dataset<Row> {
-        println("\n--- [M2] Análise de Procura Temporal (v4) ---")
+        println("\n--- [$tag] Temporal Demand Analysis ---")
 
-        // Step 1: Collect the tiny 265-row zone table on the driver and group zone IDs by borough
-        val zoneRows = input.zones.select("LocationID", "Borough").collectAsList()
-        val zonesByBorough = zoneRows
-            .filter { !it.isNullAt(0) && !it.isNullAt(1) }
-            .groupBy({ it.getString(1) }, { it.getInt(0) })
+        // Step 1: Collect the 265-row zone table and group zone IDs by borough using sequences
+        val zoneRows = input.zones.select(COL_LOCATION_ID, COL_BOROUGH).collectAsList()
+        val zonesByBorough = HashMap<String, MutableList<Int>>(8)
+        zoneRows.asSequence()
+            .filter { !it.isNullAt(ZONE_LOCATION_ID_IDX) && !it.isNullAt(ZONE_BOROUGH_IDX) }
+            .forEach { row ->
+                zonesByBorough.getOrPut(row.getString(ZONE_BOROUGH_IDX)) { ArrayList() }
+                    .add(row.getInt(ZONE_LOCATION_ID_IDX))
+            }
         val boroughs = zonesByBorough.keys.sorted()
 
         // Map PULocationID -> boroughId (0..6, fits in 3 bits)
         val boroughIdExpr = buildBoroughIdExpr(boroughs, zonesByBorough)
-
-        // Bit layout (11 bits total):
-        // [ bits 10..8: boroughId (0..6, 3 bits) | bits 7..5: day_of_week (1..7, 3 bits) | bits 4..0: hour_of_day (0..23, 5 bits) ]
-        val dayOfWeek = sf.dayofweek(sf.col("tpep_pickup_datetime"))
-        val hourOfDay = sf.hour(sf.col("tpep_pickup_datetime"))
-        val boroughDayHourKey = sf.shiftleft(boroughIdExpr, BOROUGH_SHIFT)
-            .plus(sf.shiftleft(dayOfWeek, DAY_SHIFT))
-            .plus(hourOfDay)
+        val boroughDayHourKey = packBoroughDayHour(boroughIdExpr)
 
         // Step 2: Single aggregation by the 11-bit key (at most 7 * 7 * 24 = 1,176 groups, no join needed)
         val aggregated = input.trips
             .select(*m2TripColumns)
-            .groupBy(boroughDayHourKey.alias("borough_day_hour_key"))
+            .groupBy(boroughDayHourKey.alias(COL_BOROUGH_DAY_HOUR_KEY))
             .agg(
-                sf.count("*").alias("total_trips"),
-                sf.avg("fare_amount").alias("mean_fare_amount"),
-                sf.avg(tripDurationMin()).alias("mean_trip_duration_min"),
-                sf.avg("trip_distance").alias("mean_trip_distance")
+                sf.count("*").alias(COL_TOTAL_TRIPS),
+                sf.avg(COL_FARE_AMOUNT).alias(COL_MEAN_FARE_AMOUNT),
+                sf.avg(tripDurationMin()).alias(COL_MEAN_TRIP_DURATION_MIN),
+                sf.avg(COL_TRIP_DISTANCE).alias(COL_MEAN_TRIP_DISTANCE)
             )
 
         // Step 3: Unpack the 11-bit key into (pickup_borough, day_of_week, hour_of_day)
-        val boroughIdCol = sf.shiftrightunsigned(sf.col("borough_day_hour_key"), BOROUGH_SHIFT)
+        val boroughIdCol = sf.shiftrightunsigned(sf.col(COL_BOROUGH_DAY_HOUR_KEY), BOROUGH_SHIFT)
         val m2Df = aggregated
-            .withColumn("pickup_borough", buildBoroughNameExpr(boroughs, boroughIdCol))
-            .withColumn("day_of_week", sf.shiftrightunsigned(sf.col("borough_day_hour_key"), DAY_SHIFT).bitwiseAND(DAY_MASK))
-            .withColumn("hour_of_day", sf.col("borough_day_hour_key").bitwiseAND(HOUR_MASK))
-            .drop("borough_day_hour_key")
-            .repartition(sf.col("pickup_borough"))
+            .withColumn(COL_PICKUP_BOROUGH, buildBoroughNameExpr(boroughs, boroughIdCol))
+            .withColumn(COL_DAY_OF_WEEK, sf.shiftrightunsigned(sf.col(COL_BOROUGH_DAY_HOUR_KEY), DAY_SHIFT).bitwiseAND(DAY_MASK))
+            .withColumn(COL_HOUR_OF_DAY, sf.col(COL_BOROUGH_DAY_HOUR_KEY).bitwiseAND(HOUR_MASK))
+            .drop(COL_BOROUGH_DAY_HOUR_KEY)
+            .repartition(sf.col(COL_PICKUP_BOROUGH))
 
         writeTemporalDemand(m2Df, input.outputDir)
 
@@ -67,7 +64,7 @@ class M2V4 : Analysis {
 
     /** Maps PULocationID to its 3-bit borough index (0..6). */
     private fun buildBoroughIdExpr(boroughs: List<String>, zonesByBorough: Map<String, List<Int>>): Column {
-        val puCol = sf.col("PULocationID")
+        val puCol = sf.col(COL_PU_LOCATION_ID)
         var expr: Column? = null
         for ((index, borough) in boroughs.withIndex()) {
             val zoneIds = zonesByBorough[borough].orEmpty().toTypedArray()
@@ -84,13 +81,18 @@ class M2V4 : Analysis {
             val condition = boroughIdCol.equalTo(index)
             expr = if (expr == null) sf.`when`(condition, borough) else expr.`when`(condition, borough)
         }
-        return expr?.otherwise("Unknown") ?: sf.lit("Unknown")
+        return expr?.otherwise(UNKNOWN_BOROUGH) ?: sf.lit(UNKNOWN_BOROUGH)
     }
 }
 
-private const val HOUR_BITS = 5                                // 0..23 fits in 5 bits (max 31)
-private const val DAY_BITS = 3                                 // 1..7 fits in 3 bits (max 7)
-private const val DAY_SHIFT = HOUR_BITS                        // shift day_of_week by 5 bits
-private const val BOROUGH_SHIFT = HOUR_BITS + DAY_BITS         // shift boroughId by 8 bits
-private const val HOUR_MASK = (1 shl HOUR_BITS) - 1            // 0b11111 = 31
-private const val DAY_MASK = (1 shl DAY_BITS) - 1              // 0b111 = 7
+/**
+ * Bit layout (11 bits total):
+ * [ bits 10..8: boroughId (0..6, 3 bits) | bits 7..5: day_of_week (1..7, 3 bits) | bits 4..0: hour_of_day (0..23, 5 bits) ]
+ */
+internal fun packBoroughDayHour(boroughIdExpr: Column): Column {
+    val dayOfWeek = sf.dayofweek(sf.col(COL_PICKUP_DATETIME))
+    val hourOfDay = sf.hour(sf.col(COL_PICKUP_DATETIME))
+    return sf.shiftleft(boroughIdExpr, BOROUGH_SHIFT)
+        .plus(sf.shiftleft(dayOfWeek, DAY_SHIFT))
+        .plus(hourOfDay)
+}

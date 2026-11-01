@@ -17,16 +17,15 @@ import org.apache.spark.sql.functions as sf
 class M2V1 : Analysis {
 
     override fun run(input: AnalysisInput): Dataset<Row> {
-        val tag = javaClass.simpleName
         println("\n--- [$tag] Temporal Demand Analysis ---")
 
         val m2Df = input.trips
             .select(*m2TripColumns)
-            .join(sf.broadcast(pickupZones(input.zones)), "PULocationID")
+            .join(sf.broadcast(pickupZones(input.zones)), COL_PU_LOCATION_ID)
             .let(::aggregateTemporalDemand)
-            .orderBy("pickup_borough", "day_of_week", "hour_of_day")
+            .orderBy(COL_PICKUP_BOROUGH, COL_DAY_OF_WEEK, COL_HOUR_OF_DAY)
 
-        writeTemporalDemand(m2Df, input.outputDir, tag)
+        writeTemporalDemand(m2Df, input.outputDir)
 
         return m2Df
     }

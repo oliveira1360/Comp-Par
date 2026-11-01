@@ -9,7 +9,10 @@ RUN pip install --no-cache-dir \
     jupyterlab \
     py4j \
     pandas \
-    pyarrow
+    pyarrow \
+    matplotlib \
+    seaborn \
+    tabulate
 
 ENV PYTHONPATH=/opt/spark/python:$PYTHONPATH
 

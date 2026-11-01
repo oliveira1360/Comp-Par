@@ -5,21 +5,21 @@ package compar.profiler
  */
 data class RunMetrics(
     val wallTimeS: Double,
-    val numJobs: Int,
-    val numStages: Int,
-    val numTasks: Long,
-    val executorRunTimeMs: Long,
-    val executorCpuTimeMs: Long,
-    val jvmGcTimeMs: Long,
-    val peakExecutionMemoryBytes: Long,
-    val inputBytes: Long,
-    val outputBytes: Long,
-    val shuffleReadBytes: Long,
-    val shuffleWriteBytes: Long,
-    val shuffleReadRecords: Long,
-    val shuffleWriteRecords: Long,
-    val memorySpilledBytes: Long,
-    val diskSpilledBytes: Long,
+    val numJobs: Int = 0,
+    val numStages: Int = 0,
+    val numTasks: Long = 0L,
+    val executorRunTimeMs: Long = 0L,
+    val executorCpuTimeMs: Long = 0L,
+    val jvmGcTimeMs: Long = 0L,
+    val peakExecutionMemoryBytes: Long = 0L,
+    val inputBytes: Long = 0L,
+    val outputBytes: Long = 0L,
+    val shuffleReadBytes: Long = 0L,
+    val shuffleWriteBytes: Long = 0L,
+    val shuffleReadRecords: Long = 0L,
+    val shuffleWriteRecords: Long = 0L,
+    val memorySpilledBytes: Long = 0L,
+    val diskSpilledBytes: Long = 0L,
     val maxTaskDurationMs: Long = 0L,
     val medianTaskDurationMs: Long = 0L,
     val stages: List<StageSummary> = emptyList()
@@ -27,29 +27,11 @@ data class RunMetrics(
     val skewRatio: Double
         get() = if (medianTaskDurationMs > 0) maxTaskDurationMs.toDouble() / medianTaskDurationMs.toDouble() else 1.0
 
-    /**
-     * Converts the scalar metrics to a map to simplify exports and comparisons.
-     */
-    fun toMap(): Map<String, Number> = linkedMapOf(
-        "wall_time_s" to wallTimeS,
-        "num_jobs" to numJobs,
-        "num_stages" to numStages,
-        "num_tasks" to numTasks,
-        "executor_run_time_ms" to executorRunTimeMs,
-        "executor_cpu_time_ms" to executorCpuTimeMs,
-        "jvm_gc_time_ms" to jvmGcTimeMs,
-        "peak_execution_memory_bytes" to peakExecutionMemoryBytes,
-        "input_bytes" to inputBytes,
-        "output_bytes" to outputBytes,
-        "shuffle_read_bytes" to shuffleReadBytes,
-        "shuffle_write_bytes" to shuffleWriteBytes,
-        "shuffle_read_records" to shuffleReadRecords,
-        "shuffle_write_records" to shuffleWriteRecords,
-        "memory_spilled_bytes" to memorySpilledBytes,
-        "disk_spilled_bytes" to diskSpilledBytes,
-        "max_task_duration_ms" to maxTaskDurationMs,
-        "median_task_duration_ms" to medianTaskDurationMs
-    )
+    val hasSignificantSkew: Boolean
+        get() = stages.any { it.hasSignificantSkew }
+
+    fun formatSkew(): String =
+        if (medianTaskDurationMs > 0) String.format("%.1fx", skewRatio) else "-"
 }
 
 /**
@@ -72,5 +54,18 @@ data class StageSummary(
 ) {
     val skewRatio: Double
         get() = if (medianTaskDurationMs > 0) maxTaskDurationMs.toDouble() / medianTaskDurationMs.toDouble() else 1.0
+
+    val hasSignificantSkew: Boolean
+        get() = medianTaskDurationMs > 0 && skewRatio >= SKEW_WARNING_THRESHOLD
+
+    fun formatSkew(): String {
+        if (medianTaskDurationMs <= 0) return "-"
+        val flag = if (hasSignificantSkew) " (!)" else ""
+        return String.format("%.1fx%s", skewRatio, flag)
+    }
+
+    companion object {
+        const val SKEW_WARNING_THRESHOLD = 3.0
+    }
 }
 

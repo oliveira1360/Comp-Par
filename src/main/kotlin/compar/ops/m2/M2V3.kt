@@ -21,55 +21,48 @@ import org.apache.spark.sql.functions as sf
 class M2V3 : Analysis {
 
     override fun run(input: AnalysisInput): Dataset<Row> {
-        println("\n--- [M2] Temporal Demand Analysis (v3) ---")
+        println("\n--- [$tag] Temporal Demand Analysis ---")
 
         // Bit layout (17 bits total):
         // [ bits 16..8: PULocationID (1..263, 9 bits) | bits 7..5: day_of_week (1..7, 3 bits) | bits 4..0: hour_of_day (0..23, 5 bits) ]
-        val dayOfWeek = sf.dayofweek(sf.col("tpep_pickup_datetime"))
-        val hourOfDay = sf.hour(sf.col("tpep_pickup_datetime"))
-        val zoneDayHourKey = sf.shiftleft(sf.col("PULocationID"), ZONE_SHIFT)
+        val dayOfWeek = sf.dayofweek(sf.col(COL_PICKUP_DATETIME))
+        val hourOfDay = sf.hour(sf.col(COL_PICKUP_DATETIME))
+        val zoneDayHourKey = sf.shiftleft(sf.col(COL_PU_LOCATION_ID), ZONE_SHIFT)
             .plus(sf.shiftleft(dayOfWeek, DAY_SHIFT))
             .plus(hourOfDay)
 
         // Step 1: Pre-aggregate millions of trips by the single 17-bit integer key (<= 44,184 groups)
         val tripsByZoneDayHour = input.trips
             .select(*m2TripColumns)
-            .groupBy(zoneDayHourKey.alias("zone_day_hour_key"))
+            .groupBy(zoneDayHourKey.alias(COL_ZONE_DAY_HOUR_KEY))
             .agg(
-                sf.count("*").alias("zone_trips"),
-                sf.sum("fare_amount").alias("sum_fare"),
-                sf.sum(tripDurationMin()).alias("sum_duration"),
-                sf.sum("trip_distance").alias("sum_distance")
+                sf.count("*").alias(COL_ZONE_TRIPS),
+                sf.sum(COL_FARE_AMOUNT).alias(COL_SUM_FARE),
+                sf.sum(tripDurationMin()).alias(COL_SUM_DURATION),
+                sf.sum(COL_TRIP_DISTANCE).alias(COL_SUM_DISTANCE)
             )
 
         // Step 2: Unpack the 17-bit key on the small pre-aggregated table (<= 44,184 rows)
         val unpackedByZone = tripsByZoneDayHour
-            .withColumn("PULocationID", sf.shiftrightunsigned(sf.col("zone_day_hour_key"), ZONE_SHIFT))
-            .withColumn("day_of_week", sf.shiftrightunsigned(sf.col("zone_day_hour_key"), DAY_SHIFT).bitwiseAND(DAY_MASK))
-            .withColumn("hour_of_day", sf.col("zone_day_hour_key").bitwiseAND(HOUR_MASK))
+            .withColumn(COL_PU_LOCATION_ID, sf.shiftrightunsigned(sf.col(COL_ZONE_DAY_HOUR_KEY), ZONE_SHIFT))
+            .withColumn(COL_DAY_OF_WEEK, sf.shiftrightunsigned(sf.col(COL_ZONE_DAY_HOUR_KEY), DAY_SHIFT).bitwiseAND(DAY_MASK))
+            .withColumn(COL_HOUR_OF_DAY, sf.col(COL_ZONE_DAY_HOUR_KEY).bitwiseAND(HOUR_MASK))
 
         // Step 3: Join the small table with the zone lookup and roll up sums into borough means
-        val totalTrips = sf.sum("zone_trips")
+        val totalTrips = sf.sum(COL_ZONE_TRIPS)
         val m2Df = unpackedByZone
-            .join(sf.broadcast(pickupZones(input.zones)), "PULocationID")
-            .groupBy("pickup_borough", "day_of_week", "hour_of_day")
+            .join(sf.broadcast(pickupZones(input.zones)), COL_PU_LOCATION_ID)
+            .groupBy(COL_PICKUP_BOROUGH, COL_DAY_OF_WEEK, COL_HOUR_OF_DAY)
             .agg(
-                totalTrips.alias("total_trips"),
-                sf.sum("sum_fare").divide(totalTrips).alias("mean_fare_amount"),
-                sf.sum("sum_duration").divide(totalTrips).alias("mean_trip_duration_min"),
-                sf.sum("sum_distance").divide(totalTrips).alias("mean_trip_distance")
+                totalTrips.alias(COL_TOTAL_TRIPS),
+                sf.sum(COL_SUM_FARE).divide(totalTrips).alias(COL_MEAN_FARE_AMOUNT),
+                sf.sum(COL_SUM_DURATION).divide(totalTrips).alias(COL_MEAN_TRIP_DURATION_MIN),
+                sf.sum(COL_SUM_DISTANCE).divide(totalTrips).alias(COL_MEAN_TRIP_DISTANCE)
             )
-            .repartition(sf.col("pickup_borough"))
+            .repartition(sf.col(COL_PICKUP_BOROUGH))
 
         writeTemporalDemand(m2Df, input.outputDir)
 
         return m2Df
     }
 }
-
-private const val HOUR_BITS = 5                                // 0..23 fits in 5 bits (max 31)
-private const val DAY_BITS = 3                                 // 1..7 fits in 3 bits (max 7)
-private const val DAY_SHIFT = HOUR_BITS                        // shift day_of_week by 5 bits
-private const val ZONE_SHIFT = HOUR_BITS + DAY_BITS            // shift PULocationID by 8 bits
-private const val HOUR_MASK = (1 shl HOUR_BITS) - 1            // 0b11111 = 31
-private const val DAY_MASK = (1 shl DAY_BITS) - 1              // 0b111 = 7

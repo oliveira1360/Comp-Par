@@ -23,7 +23,6 @@ import org.apache.spark.sql.types.DataTypes
 class M1V0Baseline : DataLoader {
 
     override fun load(spark: SparkSession, dataPath: String, sampleFraction: Double?): Dataset<Row> {
-        val tag = javaClass.simpleName
         println("\n[$tag] Loading data from: $dataPath")
         val dfRaw = spark.read().parquet(dataPath)
 
