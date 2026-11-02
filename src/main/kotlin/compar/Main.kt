@@ -85,7 +85,9 @@ private fun createM2(v: String): Analysis = when (normalizeVersion(v)) {
 private fun createM3(v: String): Analysis = when (normalizeVersion(v)) {
     "v0", "base", "" -> M3V0Baseline()
     "v1" -> M3V1()
-    else -> throw IllegalArgumentException("Unknown M3 version '$v' (available: v0..v1)")
+    "v2" -> M3V2()
+    "v3" -> M3V3()
+    else -> throw IllegalArgumentException("Unknown M3 version '$v' (available: v0..v3)")
 }
 
 private fun createO1(v: String): Analysis = when (normalizeVersion(v)) {

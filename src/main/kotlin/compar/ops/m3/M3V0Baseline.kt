@@ -50,6 +50,11 @@ class M3V0Baseline : Analysis {
             .orderBy("year_month")
             .rowsBetween(-2, 0)
 
+        val wZonePrevious3M = Window
+            .partitionBy("PULocationID")
+            .orderBy("year_month")
+            .rowsBetween(-3, -1)
+
         val m3Df = monthlyZoneStats
             .withColumn("borough_volume_rank", sf.rank().over(wBoroughMonthRank))
             .withColumn("borough_monthly_volume", sf.sum("monthly_trip_volume").over(wBoroughMonthTotal))
@@ -61,8 +66,8 @@ class M3V0Baseline : Analysis {
                 ).otherwise(0.0)
             )
             .withColumn("rolling_3m_trip_share", sf.avg("monthly_trip_share").over(wZoneRolling3M))
-            .withColumn("rolling_mean_volume", sf.avg("monthly_trip_volume").over(wZoneRolling3M))
-            .withColumn("rolling_stddev_volume", sf.stddev("monthly_trip_volume").over(wZoneRolling3M))
+            .withColumn("rolling_mean_volume", sf.avg("monthly_trip_volume").over(wZonePrevious3M))
+            .withColumn("rolling_stddev_volume", sf.stddev("monthly_trip_volume").over(wZonePrevious3M))
             .withColumn(
                 "volume_deviation_flag",
                 sf.coalesce(
