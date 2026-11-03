@@ -2,9 +2,16 @@ package compar.ops.m3
 
 import org.apache.spark.sql.Dataset
 import org.apache.spark.sql.Row
+import org.apache.spark.sql.SaveMode
 import org.apache.spark.sql.expressions.Window
 import org.apache.spark.sql.functions as sf
 
+/** Writes the zone-level statistics DataFrame in Parquet format to the output directory. */
+internal fun writeZoneStatistics(df: Dataset<Row>, outputDir: String) {
+    df.write()
+        .mode(SaveMode.Overwrite)
+        .parquet(outputDir)
+}
 
 /** Zone table with the column names used by the M3 output. */
 internal fun pickupZoneNames(zones: Dataset<Row>): Dataset<Row> = zones.select(

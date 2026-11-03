@@ -99,5 +99,5 @@ internal fun anomalyCondition(
 internal fun writeAnomalyRates(df: Dataset<Row>, outputDir: String) {
     df.write()
         .mode(SaveMode.Overwrite)
-        .parquet("$outputDir/o1_fare_anomalies")
+        .parquet(outputDir)
 }

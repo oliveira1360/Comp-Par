@@ -13,7 +13,7 @@ WORKER_CORES=${3:-2}
 export SPARK_WORKER_MEMORY="${WORKER_MEM}"
 export SPARK_WORKER_CORES="${WORKER_CORES}"
 export SPARK_WORKER_CPUS="${WORKER_CORES}.0"
-# Dá 4GB de margem no contentor Docker para o SO, JVM e buffers pesados de escrita Parquet
+# Provides 4GB headroom in Docker container for OS, JVM, and heavy Parquet write buffers
 if [[ "$WORKER_MEM" =~ ^([0-9]+)G$ ]]; then
     export SPARK_WORKER_CONTAINER_MEM="$((BASH_REMATCH[1] + 4))G"
 else

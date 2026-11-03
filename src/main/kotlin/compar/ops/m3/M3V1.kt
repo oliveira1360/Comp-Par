@@ -37,6 +37,8 @@ class M3V1 : Analysis {
         val flaggedCount = m3Df.filter(sf.col("volume_deviation_flag").equalTo(true)).count()
         println(String.format("[$tag] Total zone-months with volume deviation > 1.5 std: %,d", flaggedCount))
 
+        writeZoneStatistics(m3Df, input.outputDir)
+
         return m3Df
     }
 }

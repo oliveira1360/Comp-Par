@@ -5,14 +5,14 @@
 #   1, 3 workers: ALL_best
 # Workers have 2 cores and 2 GB each (the code asks for 2 GB executors). Data: data/bench (12 months of 2024).
 # usage: scripts/cluster_bench/cluster_matrix.sh     -> output/cluster_bench/{metrics,logs}, progress.txt, env.txt
-# then:  scripts/local_bench/analyze.sh output/cluster_bench
+# then:  visualize in notebooks/benchmarks_report.ipynb
 export MSYS_NO_PATHCONV=1
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT" || exit 1
 OUT="$ROOT/output/cluster_bench"
 ROUNDS=${ROUNDS:-3}
 WORKER_COUNTS=${WORKER_COUNTS:-"2 1 3"}
-BEST="--ops M1,M2,M3,O1,O4 --m1 v3 --m2 v7 --m3 v3 --o1 v7 --o4 v0"
+BEST="--ops M1,M2,M3,O1,O4 --m1 v3 --m2 v7 --m3 v3 --o1 v7 --o4 v6"
 BASE="--ops M1,M2,M3,O1,O4 --m1 v0 --m2 v0 --m3 v0 --o1 v0 --o4 v0"
 mkdir -p "$OUT/metrics" "$OUT/logs"
 

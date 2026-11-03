@@ -33,7 +33,7 @@ Kotlin Pipeline Arguments (MainKt):
 
   --m1 <version>          M1 implementation version (v0..v3, default: v3).
   --m2 <version>          M2 implementation version (v0..v7, default: v7).
-  --m3 <version>          M3 implementation version (v0..v1, default: v0).
+  --m3 <version>          M3 implementation version (v0..v3, default: v3).
   --o1 <version>          O1 implementation version (v0..v7, default: v0).
   --o4 <version>          O4 implementation version (v0..v6, default: v0).
 

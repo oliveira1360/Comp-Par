@@ -94,30 +94,25 @@ bottleneck e a alteração, e acrescentá-la ao `when` da operação em `Main.kt
 ./scripts/stop_cluster.sh
 ```
 
-### 7. Reproduzir os resultados do relatório (`docs/report.pdf`)
-
-**Ambiente.** Local: JDK 17 (toolchain do Gradle), Spark 3.5.3 em `local[*]` com `-Xmx4g`. Cluster: Docker Desktop
-(`docker/docker-compose.yml`, imagem `spark:python3` = Spark 4.2.0, Scala 2.13, Java 21), 1 master + 1/2/3 workers com 2 cores
-e 2 GB cada; driver em client mode dentro do `spark-master` (`--driver-memory 2g`). Configuração Spark não-default (`SparkUtils.kt`):
-`spark.driver.memory=2g`, `spark.executor.memory=2g`, `spark.sql.adaptive.enabled=true`, `spark.ui.showConsoleProgress=false`.
-Dados: os 12 ficheiros `yellow_tripdata_2024-MM.parquet` e `taxi_zone_lookup.csv` em `data/` (`./scripts/download_data.sh`).
+### 7. Executar Benchmarks no Cluster Docker
+Para comparar o desempenho entre diferentes versões ou pipelines completos num ambiente isolado:
 
 ```bash
-# 1. Matriz local: todas as versões de M1, M2, M3, O1, O4 + ALL_v0/ALL_best, 3 rondas, JVM nova por run (~25 min)
-./scripts/local_bench/matrix.sh
-./scripts/local_bench/analyze.sh build/local-bench           # medianas, summary.csv/.md e verificação dos resultados
+# Comparar todas as versões de M2 no cluster Docker:
+./scripts/benchmark.sh --m2 all --sample 0.1
 
-# 2. Escalabilidade local: 1/3/6/12 meses, amostras de 10%/20% e local[1/2/4/8] (~30 min)
-./scripts/local_bench/scaling.sh
-./scripts/local_bench/analyze.sh build/local-bench-scaling
+# Comparar todas as versões de M3:
+./scripts/benchmark.sh --m3 all --sample 0.1
 
-# 3. Cluster Docker: 1, 2 e 3 workers; com 2 workers também ALL_v0 e amostras de 10%/20% (~20 min)
-./scripts/cluster_bench/cluster_matrix.sh
-./scripts/local_bench/analyze.sh output/cluster_bench
+# Comparar todas as versões de O4:
+./scripts/benchmark.sh --o4 all --sample 0.1
+
+# Correr o pipeline completo com as melhores versões:
+./scripts/submit_job.sh --ops M1,M2,M3,O1,O4 --m1 v3 --m2 v7 --m3 v3 --o1 v7 --o4 v6 --profile
 ```
 
-No Windows sem `winutils.exe`, os scripts locais usam automaticamente `compar.bench.NoNativeLocalFs` (só evita chamadas de
-permissões do Hadoop). Cada script grava `env.txt` (máquina, versões, commit) e `progress.txt` (código de saída e duração de cada run).
+Os resultados de dados Parquet e os ficheiros JSON com as métricas são gravados em `output/` organizados por operação (ex: `output/M3Outputs/`, `output/M3Metrics/`).
+Para visualizar os gráficos e tabelas consolidadas de desempenho, abre o notebook [`notebooks/benchmarks_report.ipynb`](notebooks/benchmarks_report.ipynb) no Jupyter.
 
 ---
 

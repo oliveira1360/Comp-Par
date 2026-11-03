@@ -9,6 +9,8 @@ import org.apache.spark.sql.types.DataTypes
 import org.apache.spark.sql.types.Metadata
 import org.apache.spark.sql.types.StructField
 import org.apache.spark.sql.types.StructType
+import kotlin.math.abs
+import kotlin.math.sqrt
 
 /**
  * M3 v3 — windows on the driver.
@@ -35,16 +37,16 @@ class M3V3 : Analysis {
         println("\n--- [$tag] Zone-Level Statistics ---")
 
         val zoneNames = pickupZoneNames(input.zones).collectAsList()
-            .associate { it.getInt(0) to Pair(it.getString(1), it.getString(2)) }
+            .associate { (it.get(0) as Number).toInt() to Pair(it.getString(1), it.getString(2)) }
 
         val rows = aggregateByZoneMonthKey(input.trips).collectAsList().mapNotNull { row ->
-            val zoneId = row.getInt(0)
+            val zoneId = (row.get(0) as Number).toInt()
             val names = zoneNames[zoneId] ?: return@mapNotNull null
-            val key = row.getInt(1)
+            val key = (row.get(1) as Number).toInt()
             ZoneMonth(
-                zoneId, names.first, names.second, String.format("%04d-%02d", key / 100, key % 100), row.getLong(2),
-                row.getDouble(3), if (row.isNullAt(4)) null else row.getDouble(4),
-                row.getDouble(5), if (row.isNullAt(6)) null else row.getDouble(6)
+                zoneId, names.first, names.second, String.format("%04d-%02d", key / 100, key % 100), (row.get(2) as Number).toLong(),
+                (row.get(3) as Number).toDouble(), if (row.isNullAt(4)) null else (row.get(4) as Number).toDouble(),
+                (row.get(5) as Number).toDouble(), if (row.isNullAt(6)) null else (row.get(6) as Number).toDouble()
             )
         }
 
@@ -54,11 +56,13 @@ class M3V3 : Analysis {
         val sorted = rows.sortedWith(
             compareBy<ZoneMonth> { it.yearMonth }.thenBy(nullsFirst()) { it.borough }.thenBy { it.rank }
         )
-        val m3Df = input.spark.createDataFrame(sorted.map { toRow(it) }, schema)
+        val m3Df = input.spark.createDataFrame(sorted.map { toRow(it) }, schema).coalesce(1)
 
         m3Df.show(20, false)
 
         println(String.format("[$tag] Total zone-months with volume deviation > 1.5 std: %,d", rows.count { it.flagged }))
+
+        writeZoneStatistics(m3Df, input.outputDir)
 
         return m3Df
     }
@@ -86,7 +90,7 @@ class M3V3 : Analysis {
                 val stddev = sampleStddev(previous)
                 row.rollingMean = mean
                 row.rollingStddev = stddev
-                row.flagged = mean != null && stddev != null && Math.abs(row.volume - mean) > stddev * 1.5
+                row.flagged = mean != null && stddev != null && abs(row.volume - mean) > stddev * 1.5
             }
         }
     }
@@ -104,7 +108,7 @@ class M3V3 : Analysis {
             mean += deltaN
             squares += delta * (delta - deltaN)
         }
-        return Math.sqrt(squares / (count - 1))
+        return sqrt(squares / (count - 1))
     }
 
     private fun toRow(row: ZoneMonth): Row = RowFactory.create(

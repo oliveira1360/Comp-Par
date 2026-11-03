@@ -81,5 +81,5 @@ internal fun writeTemporalDemand(df: Dataset<Row>, outputDir: String) {
     df.write()
         .mode(SaveMode.Overwrite)
         .partitionBy(COL_PICKUP_BOROUGH)
-        .parquet("$outputDir/m2_temporal_demand")
+        .parquet(outputDir)
 }

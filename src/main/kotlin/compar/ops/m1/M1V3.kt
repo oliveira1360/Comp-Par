@@ -28,8 +28,8 @@ class M1V3 : DataLoader {
         "tpep_dropoff_datetime" to DataTypes.TimestampNTZType,
         "passenger_count" to DataTypes.LongType,
         "trip_distance" to DataTypes.DoubleType,
-        "PULocationID" to DataTypes.IntegerType,
-        "DOLocationID" to DataTypes.IntegerType,
+        "PULocationID" to DataTypes.LongType,
+        "DOLocationID" to DataTypes.LongType,
         "fare_amount" to DataTypes.DoubleType
     )
 
@@ -119,8 +119,8 @@ private class ScanFiles(private val columns: List<String>) :
                     if (pickupZone.isNullAt(i) || dropOffZone.isNullAt(i)) {
                         masks[i] = masks[i] or 16
                     } else {
-                        val from = pickupZone.getInt(i)
-                        val to = dropOffZone.getInt(i)
+                        val from = pickupZone.getLong(i)
+                        val to = dropOffZone.getLong(i)
                         if (from !in 1..263 || to < 1 || to > 263) masks[i] = masks[i] or 16
                     }
                 }

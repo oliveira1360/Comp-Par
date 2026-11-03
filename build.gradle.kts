@@ -96,7 +96,7 @@ tasks.register("benchmark") {
 
         val m1List = parseVersions("m1", "v3", listOf("v0", "v1", "v2", "v3"))
         val m2List = parseVersions("m2", "v7", listOf("v0", "v1", "v2", "v3", "v4", "v5", "v6", "v7"))
-        val m3List = parseVersions("m3", "v0", listOf("v0", "v1"))
+        val m3List = parseVersions("m3", "v3", listOf("v0", "v1", "v2", "v3"))
         val o1List = parseVersions("o1", "v0", listOf("v0", "v1", "v2", "v3", "v4", "v5", "v6", "v7"))
         val o4List = parseVersions("o4", "v0", listOf("v0", "v1", "v2", "v3", "v4", "v5", "v6"))
 
@@ -112,6 +112,16 @@ tasks.register("benchmark") {
         val data = project.findProperty("data")?.toString() ?: "/data/yellow_tripdata_2015-*.parquet"
         val sample = project.findProperty("sample")?.toString()
         val runsPerConfig = project.findProperty("runs")?.toString()?.toIntOrNull()?.coerceAtLeast(1) ?: 1
+        val cooldownSeconds = project.findProperty("cooldown")?.toString()?.toLongOrNull() ?: 0L
+
+        val targetOp = when {
+            m1List.size > 1 || ops == "M1" -> "m1"
+            m2List.size > 1 || ops == "M2" -> "m2"
+            m3List.size > 1 || ops == "M3" -> "m3"
+            o1List.size > 1 || ops == "O1" -> "o1"
+            o4List.size > 1 || ops == "O4" -> "o4"
+            else -> if (ops.split(",").size == 1) ops.trim().lowercase() else "all"
+        }
 
         data class RunConfig(val m1: String, val m2: String, val m3: String, val o1: String, val o4: String, val runIdx: Int) {
             fun label(): String {
@@ -148,6 +158,16 @@ tasks.register("benchmark") {
         configs.forEachIndexed { idx, cfg ->
             val label = cfg.label()
             val safeLabel = label.replace(":", "").replace("+", "_").replace("#", "_")
+            val versionSubfolder = when (targetOp) {
+                "m1" -> cfg.m1
+                "m2" -> cfg.m2
+                "m3" -> cfg.m3
+                "o1" -> cfg.o1
+                "o4" -> cfg.o4
+                else -> safeLabel
+            } + (if (runsPerConfig > 1) "_r${cfg.runIdx}" else "")
+            val runOutputDir = "/output/outputs/$targetOp/$versionSubfolder"
+            val runMetricsPath = "/output/metrics/$targetOp/profiling_${versionSubfolder}.json"
             println("\n>>> [${idx + 1}/${configs.size}] Running isolated spark-submit for [$label] ...")
 
             val cmd = mutableListOf(
@@ -159,8 +179,8 @@ tasks.register("benchmark") {
                 "/apps/nyc-taxi-analytics.jar",
                 "--data", data,
                 "--lookup", "/data/taxi_zone_lookup.csv",
-                "--output", "/output",
-                "--export-metrics", "/output/benchmarks/profiling_${safeLabel}.json",
+                "--output", runOutputDir,
+                "--export-metrics", runMetricsPath,
                 "--profile",
                 "--ops", ops,
                 "--m1", cfg.m1,
@@ -184,7 +204,8 @@ tasks.register("benchmark") {
                 }
             }
             val exitCode = proc.waitFor()
-            File(logDir, "gradle_bench_${safeLabel}.log").writeText(outputLines.joinToString("\n"))
+            val logFile = File(logDir, "gradle_bench_${safeLabel}.log").apply { parentFile?.mkdirs() }
+            logFile.writeText(outputLines.joinToString("\n"))
 
             if (exitCode != 0) {
                 println("    [ERROR] Run [$label] exited with code $exitCode (see benchmarks/logs/gradle_bench_${safeLabel}.log)")
@@ -209,6 +230,11 @@ tasks.register("benchmark") {
                         collectedGroups.add(runGroup)
                     }
                 }
+            }
+
+            if (cooldownSeconds > 0 && idx < configs.size - 1) {
+                println("    >>> Cooling down: waiting ${cooldownSeconds}s for CPU to rest...")
+                Thread.sleep(cooldownSeconds * 1000L)
             }
         }
 
@@ -242,21 +268,4 @@ tasks.register("benchmark") {
     }
 }
 
-/**
- * Writes the runtime classpath and the Java 17 launcher used by scripts/local_bench (local[*] runs in fresh JVMs).
- * Usage: ./gradlew localBenchClasspath
- */
-tasks.register("localBenchClasspath") {
-    group = "verification"
-    description = "Writes build/local-bench/classpath.txt and java.txt for scripts/local_bench."
-    dependsOn("classes")
-    doLast {
-        val cp = sourceSets["main"].output.classesDirs.files + sourceSets["main"].output.resourcesDir!! +
-            configurations.runtimeClasspath.get().files + sparkRunner.files
-        val java = javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(17)) }
-            .get().executablePath.asFile
-        val dir = layout.buildDirectory.dir("local-bench").get().asFile.apply { mkdirs() }
-        File(dir, "classpath.txt").writeText(cp.joinToString(File.pathSeparator))
-        File(dir, "java.txt").writeText(java.absolutePath)
-    }
-}
+

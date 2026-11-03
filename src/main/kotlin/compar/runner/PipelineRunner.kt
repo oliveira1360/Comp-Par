@@ -32,9 +32,20 @@ class PipelineRunner(
         }
     }
 
-    // Input of the analyses; loads the zone table only if an operation needs it
-    private val input by lazy {
-        AnalysisInput(spark, dfClean, SparkUtils.loadZoneLookup(spark, cliArgs.lookup), cliArgs.output)
+    // Loads the zone lookup table lazily only if a downstream operation needs it
+    private val zones by lazy {
+        SparkUtils.loadZoneLookup(spark, cliArgs.lookup)
+    }
+
+    private fun inputFor(op: String, version: String): AnalysisInput {
+        val base = cliArgs.output.trimEnd('/')
+        val opLower = op.lowercase()
+        val opOutputDir = if (base.matches(Regex(".*/$opLower/[^/]+$"))) {
+            base
+        } else {
+            "$base/outputs/$opLower/$version"
+        }
+        return AnalysisInput(spark, dfClean, zones, opOutputDir)
     }
 
     /**
@@ -51,10 +62,10 @@ class PipelineRunner(
     private fun executeOperation(op: String) {
         when (op) {
             "M1" -> dfClean
-            "M2" -> runOp("M2_temporal_demand") { m2.run(input) }
-            "M3" -> runOp("M3_zone_statistics") { m3.run(input) }
-            "O1" -> runOp("O1_fare_anomaly_detection") { o1.run(input) }
-            "O4" -> runOp("O4_trip_type_classification") { o4.run(input) }
+            "M2" -> runOp("M2_temporal_demand") { m2.run(inputFor("M2", cliArgs.m2Version)) }
+            "M3" -> runOp("M3_zone_statistics") { m3.run(inputFor("M3", cliArgs.m3Version)) }
+            "O1" -> runOp("O1_fare_anomaly_detection") { o1.run(inputFor("O1", cliArgs.o1Version)) }
+            "O4" -> runOp("O4_trip_type_classification") { o4.run(inputFor("O4", cliArgs.o4Version)) }
             else -> System.err.println("Warning: unknown operation '$op'.")
         }
     }

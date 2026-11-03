@@ -103,5 +103,5 @@ internal fun classifyZoneTypeExpr(
 internal fun writeTripTypeStats(df: Dataset<Row>, outputDir: String) {
     df.write()
         .mode(SaveMode.Overwrite)
-        .parquet("$outputDir/o4_trip_types")
+        .parquet(outputDir)
 }
