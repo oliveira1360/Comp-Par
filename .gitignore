@@ -32,3 +32,30 @@ warehouse/
 .agents
 lab3/
 
+
+# LaTeX / TeXstudio build files (keep only .tex and the final .pdf)
+*.aux
+*.out
+*.toc
+*.lof
+*.lot
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+*.synctex(busy)
+*.synctex
+*.bbl
+*.blg
+*.bcf
+*.run.xml
+*-blx.bib
+*.nav
+*.snm
+*.vrb
+*.dvi
+*.xdv
+*.bak
+*.backup
+*.tex.bak
+*.tps
+*.cut

@@ -75,20 +75,49 @@ Também podes correr localmente fora do Docker usando o Gradle:
 ./gradlew run --args="--master local[*] --sample 0.1 --profile"
 ```
 
-#### Escolher versões das operações
-As versões usadas são escolhidas em `Main.kt`, onde são injetadas no `PipelineRunner`. Para mudar de versão, troca a classe e volta a correr (o `submit_job.sh` e o `benchmark.sh` recompilam o JAR):
+#### Escolher operações e versões
+As operações e a versão de cada uma escolhem-se na linha de comandos (por defeito: todas as operações, com M1 v3, M2 v7 e as restantes em v0):
 
-```kotlin
-m1 = M1V0Baseline(),
-o1 = O1V1(),   // antes: O1V0Baseline()
+```bash
+# pipeline otimizado (ALL_best do relatório)
+./scripts/submit_job.sh --ops M1,M2,M3,O1,O4 --m1 v3 --m2 v7 --m3 v3 --o1 v7 --o4 v0 --profile
 ```
 
-Para adicionar uma versão: copiar a versão anterior da operação para uma classe nova (ex: `ops/o1/O1V2.kt`), documentar no KDoc o bottleneck e a alteração, e injetá-la em `Main.kt`.
+Opções: `--data <dir>`, `--lookup <csv>`, `--output <dir>`, `--master <url>`, `--sample <fração>`, `--ops M1,M2,...`,
+`--m1/--m2/--m3/--o1/--o4 vN`, `--profile` e `--export-metrics <ficheiro.json>` (métricas do profiler por operação e por stage).
+
+Para adicionar uma versão: copiar a versão anterior da operação para uma classe nova (ex: `ops/o1/O1V8.kt`), documentar no KDoc o
+bottleneck e a alteração, e acrescentá-la ao `when` da operação em `Main.kt`.
 
 ### 6. Parar o Cluster
 ```bash
 ./scripts/stop_cluster.sh
 ```
+
+### 7. Reproduzir os resultados do relatório (`docs/report.pdf`)
+
+**Ambiente.** Local: JDK 17 (toolchain do Gradle), Spark 3.5.3 em `local[*]` com `-Xmx4g`. Cluster: Docker Desktop
+(`docker/docker-compose.yml`, imagem `spark:python3` = Spark 4.2.0, Scala 2.13, Java 21), 1 master + 1/2/3 workers com 2 cores
+e 2 GB cada; driver em client mode dentro do `spark-master` (`--driver-memory 2g`). Configuração Spark não-default (`SparkUtils.kt`):
+`spark.driver.memory=2g`, `spark.executor.memory=2g`, `spark.sql.adaptive.enabled=true`, `spark.ui.showConsoleProgress=false`.
+Dados: os 12 ficheiros `yellow_tripdata_2024-MM.parquet` e `taxi_zone_lookup.csv` em `data/` (`./scripts/download_data.sh`).
+
+```bash
+# 1. Matriz local: todas as versões de M1, M2, M3, O1, O4 + ALL_v0/ALL_best, 3 rondas, JVM nova por run (~25 min)
+./scripts/local_bench/matrix.sh
+./scripts/local_bench/analyze.sh build/local-bench           # medianas, summary.csv/.md e verificação dos resultados
+
+# 2. Escalabilidade local: 1/3/6/12 meses, amostras de 10%/20% e local[1/2/4/8] (~30 min)
+./scripts/local_bench/scaling.sh
+./scripts/local_bench/analyze.sh build/local-bench-scaling
+
+# 3. Cluster Docker: 1, 2 e 3 workers; com 2 workers também ALL_v0 e amostras de 10%/20% (~20 min)
+./scripts/cluster_bench/cluster_matrix.sh
+./scripts/local_bench/analyze.sh output/cluster_bench
+```
+
+No Windows sem `winutils.exe`, os scripts locais usam automaticamente `compar.bench.NoNativeLocalFs` (só evita chamadas de
+permissões do Hadoop). Cada script grava `env.txt` (máquina, versões, commit) e `progress.txt` (código de saída e duração de cada run).
 
 ---
 

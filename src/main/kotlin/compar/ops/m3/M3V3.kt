@@ -39,7 +39,6 @@ class M3V3 : Analysis {
 
         val rows = aggregateByZoneMonthKey(input.trips).collectAsList().mapNotNull { row ->
             val zoneId = row.getInt(0)
-            // Same as the inner join of v0: zones missing from the table are dropped
             val names = zoneNames[zoneId] ?: return@mapNotNull null
             val key = row.getInt(1)
             ZoneMonth(

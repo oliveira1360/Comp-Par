@@ -241,3 +241,22 @@ tasks.register("benchmark") {
         }
     }
 }
+
+/**
+ * Writes the runtime classpath and the Java 17 launcher used by scripts/local_bench (local[*] runs in fresh JVMs).
+ * Usage: ./gradlew localBenchClasspath
+ */
+tasks.register("localBenchClasspath") {
+    group = "verification"
+    description = "Writes build/local-bench/classpath.txt and java.txt for scripts/local_bench."
+    dependsOn("classes")
+    doLast {
+        val cp = sourceSets["main"].output.classesDirs.files + sourceSets["main"].output.resourcesDir!! +
+            configurations.runtimeClasspath.get().files + sparkRunner.files
+        val java = javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(17)) }
+            .get().executablePath.asFile
+        val dir = layout.buildDirectory.dir("local-bench").get().asFile.apply { mkdirs() }
+        File(dir, "classpath.txt").writeText(cp.joinToString(File.pathSeparator))
+        File(dir, "java.txt").writeText(java.absolutePath)
+    }
+}
