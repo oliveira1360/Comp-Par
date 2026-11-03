@@ -9,6 +9,15 @@ import org.apache.spark.sql.types.DataTypes
 import org.apache.spark.sql.types.NumericType
 
 // Definitions from the assignment shared by M1V1, M1V2 and M1V3.
+//
+// Example of the final cleaned DataFrame (dfClean) returned by M1:
+// +--------+--------------------+---------------------+---------------+-------------+----------+------------------+------------+------------+------------+-----------+-----+-------+----------+------------+---------------------+------------+--------------------+-----------+----+
+// |VendorID|tpep_pickup_datetime|tpep_dropoff_datetime|passenger_count|trip_distance|RatecodeID|store_and_fwd_flag|PULocationID|DOLocationID|payment_type|fare_amount|extra|mta_tax|tip_amount|tolls_amount|improvement_surcharge|total_amount|congestion_surcharge|airport_fee|year|
+// +--------+--------------------+---------------------+---------------+-------------+----------+------------------+------------+------------+------------+-----------+-----+-------+----------+------------+---------------------+------------+--------------------+-----------+----+
+// |1       |2015-01-01 00:11:33 |2015-01-01 00:16:48  |1              |1.0          |1         |N                 |41          |166         |1           |5.7        |0.5  |0.5    |1.4       |0.0         |0.0                  |8.4         |null                |null       |2015|
+// |1       |2015-01-01 00:18:24 |2015-01-01 00:24:20  |1              |0.9          |1         |N                 |166         |238         |3           |6.0        |0.5  |0.5    |0.0       |0.0         |0.0                  |7.3         |null                |null       |2015|
+// |1       |2015-01-01 00:26:19 |2015-01-01 00:41:06  |1              |3.5          |1         |N                 |238         |162         |1           |13.2       |0.5  |0.5    |2.9       |0.0         |0.0                  |17.4        |null                |null       |2015|
+// +--------+--------------------+---------------------+---------------+-------------+----------+------------------+------------+------------+------------+-----------+-----+-------+----------+------------+---------------------+------------+--------------------+-----------+----+
 
 internal val invalidFare: Column = sf.col("fare_amount").leq(0).or(sf.col("fare_amount").isNull)
 internal val invalidDistance: Column = sf.col("trip_distance").leq(0).or(sf.col("trip_distance").isNull)

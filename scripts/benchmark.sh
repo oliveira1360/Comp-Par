@@ -34,10 +34,10 @@ Options:
                           Available: v0, v1 (default: v0)
 
   --o1 <versions>         Comma-separated list of O1 versions to test (or "all").
-                          Available: v0, v1 (default: v0)
+                          Available: v0, v1, v2, v3, v4, v5, v6, v7 (default: v0)
 
   --o4 <versions>         Comma-separated list of O4 versions to test (or "all").
-                          Available: v0, v1 (default: v0)
+                          Available: v0, v1, v2, v3, v4, v5, v6 (default: v0)
 
   --ops <M1,M2,...>       Comma-separated list of operations to execute.
                           If omitted, inferred automatically from the version flags passed

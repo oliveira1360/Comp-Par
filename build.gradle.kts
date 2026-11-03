@@ -97,8 +97,8 @@ tasks.register("benchmark") {
         val m1List = parseVersions("m1", "v3", listOf("v0", "v1", "v2", "v3"))
         val m2List = parseVersions("m2", "v7", listOf("v0", "v1", "v2", "v3", "v4", "v5", "v6", "v7"))
         val m3List = parseVersions("m3", "v0", listOf("v0", "v1"))
-        val o1List = parseVersions("o1", "v0", listOf("v0", "v1"))
-        val o4List = parseVersions("o4", "v0", listOf("v0", "v1"))
+        val o1List = parseVersions("o1", "v0", listOf("v0", "v1", "v2", "v3", "v4", "v5", "v6", "v7"))
+        val o4List = parseVersions("o4", "v0", listOf("v0", "v1", "v2", "v3", "v4", "v5", "v6"))
 
         val explicitOps = project.findProperty("ops")?.toString()?.trim()
         val inferredOps = buildList {
