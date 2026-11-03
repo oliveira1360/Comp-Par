@@ -105,7 +105,12 @@ private fun createO1(v: String): Analysis = when (normalizeVersion(v)) {
 private fun createO4(v: String): Analysis = when (normalizeVersion(v)) {
     "v0", "base", "" -> O4V0Baseline()
     "v1" -> O4V1()
-    else -> throw IllegalArgumentException("Unknown O4 version '$v' (available: v0..v1)")
+    "v2" -> O4V2()
+    "v3" -> O4V3()
+    "v4" -> O4V4()
+    "v5" -> O4V5()
+    "v6" -> O4V6()
+    else -> throw IllegalArgumentException("Unknown O4 version '$v' (available: v0..v6)")
 }
 
 /**
