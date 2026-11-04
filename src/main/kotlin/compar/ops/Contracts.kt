@@ -5,13 +5,13 @@ import org.apache.spark.sql.Row
 import org.apache.spark.sql.SparkSession
 
 /**
- * M1 — reads the dataset and returns the cleaned trips.
+ * M1 — reads the dataset, writes the per-year cleaning statistics to [outputDir] and returns the cleaned trips.
  */
 interface DataLoader {
     val tag: String
         get() = javaClass.simpleName
 
-    fun load(spark: SparkSession, dataPath: String, sampleFraction: Double?): Dataset<Row>
+    fun load(spark: SparkSession, dataPath: String, sampleFraction: Double?, outputDir: String): Dataset<Row>
 }
 
 /**

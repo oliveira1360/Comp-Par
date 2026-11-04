@@ -22,7 +22,7 @@ import org.apache.spark.sql.types.DataTypes
  */
 class M1V0Baseline : DataLoader {
 
-    override fun load(spark: SparkSession, dataPath: String, sampleFraction: Double?): Dataset<Row> {
+    override fun load(spark: SparkSession, dataPath: String, sampleFraction: Double?, outputDir: String): Dataset<Row> {
         println("\n[$tag] Loading data from: $dataPath")
         val dfRaw = spark.read().parquet(dataPath)
 
@@ -80,7 +80,11 @@ class M1V0Baseline : DataLoader {
             )
             .orderBy("year")
 
-        cleaningStats.show(false)
+        // Write the table to a file instead of show(); collect() runs the same aggregation job
+        val statsRows = cleaningStats.collectAsList().map { row ->
+            (0 until row.size()).map { i -> row.get(i)?.toString() ?: "NULL" }
+        }
+        writeCleaningStats(cleaningStats.columns().toList(), statsRows, outputDir, tag)
 
         // Keep only the strictly valid records
         val condValidAll = sf.not(condInvalidFare)

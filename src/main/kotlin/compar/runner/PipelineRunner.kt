@@ -28,7 +28,7 @@ class PipelineRunner(
     // Cleaned M1 data; M1 runs automatically the first time it is needed, and only once
     private val dfClean: Dataset<Row> by lazy {
         runOp("M1_ingestion_and_cleaning") {
-            m1.load(spark, cliArgs.data, cliArgs.sample)
+            m1.load(spark, cliArgs.data, cliArgs.sample, cliArgs.output)
         }
     }
 

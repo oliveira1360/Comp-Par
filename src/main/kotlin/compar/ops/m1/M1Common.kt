@@ -7,6 +7,7 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.functions as sf
 import org.apache.spark.sql.types.DataTypes
 import org.apache.spark.sql.types.NumericType
+import java.io.File
 
 // Definitions from the assignment shared by M1V1, M1V2 and M1V3.
 //
@@ -90,10 +91,21 @@ internal fun addToYear(counters: MutableMap<Int?, LongArray>, year: Int?, mask: 
 }
 
 /**
- * Prints the per-year table and totals. Each row holds: total, the 5 criteria, valid.
+ * Writes the per-year cleaning statistics as one CSV file, `<outputDir>/m1_cleaning_stats.csv`.
+ * The table has one row per year, so it is written from the driver without a Spark job.
+ */
+internal fun writeCleaningStats(header: List<String>, rows: List<List<String>>, outputDir: String, tag: String? = null) {
+    val file = File(outputDir, "m1_cleaning_stats.csv")
+    file.parentFile?.mkdirs()
+    file.writeText((listOf(header) + rows).joinToString("\n", postfix = "\n") { it.joinToString(",") })
+    println("[$tag] Cleaning statistics written to: ${file.path}")
+}
+
+/**
+ * Prints the per-year table and totals and writes the table to [outputDir]. Each row holds: total, the 5 criteria, valid.
  * The table is formatted on the driver, because show() on a DataFrame costs about 1 s just to generate code.
  */
-internal fun printCleaningStats(counters: Map<Int?, LongArray>, tag: String? = null) {
+internal fun printCleaningStats(counters: Map<Int?, LongArray>, outputDir: String, tag: String? = null) {
     println("\n--- [$tag] Yearly Cleaning Statistics (Removed Records) ---")
     val header = listOf(
         "year", "total_records", "invalid_fare", "invalid_distance", "invalid_passenger",
@@ -110,6 +122,7 @@ internal fun printCleaningStats(counters: Map<Int?, LongArray>, tag: String? = n
     println(border)
     rows.forEach { println(line(it)) }
     println(border)
+    writeCleaningStats(header, rows, outputDir, tag)
 
     val totalRecords = counters.values.sumOf { it[0] }
     val validRecords = counters.values.sumOf { it[6] }

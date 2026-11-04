@@ -16,7 +16,7 @@ import org.apache.spark.sql.functions as sf
  */
 class M1V1 : DataLoader {
 
-    override fun load(spark: SparkSession, dataPath: String, sampleFraction: Double?): Dataset<Row> {
+    override fun load(spark: SparkSession, dataPath: String, sampleFraction: Double?, outputDir: String): Dataset<Row> {
         println("\n[$tag] Loading data from: $dataPath")
         var df = castIfNeeded(readTrips(spark, dataPath), tag)
             .withColumn("year", sf.year(sf.col("tpep_pickup_datetime")))
@@ -42,7 +42,7 @@ class M1V1 : DataLoader {
             val year = if (row.isNullAt(0)) null else row.getInt(0)
             year to LongArray(7) { row.getLong(it + 1) }
         }
-        printCleaningStats(counters, tag)
+        printCleaningStats(counters, outputDir, tag)
 
         return df.filter(validRecord)
     }

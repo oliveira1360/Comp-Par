@@ -33,12 +33,12 @@ class M1V3 : DataLoader {
         "fare_amount" to DataTypes.DoubleType
     )
 
-    override fun load(spark: SparkSession, dataPath: String, sampleFraction: Double?): Dataset<Row> {
+    override fun load(spark: SparkSession, dataPath: String, sampleFraction: Double?, outputDir: String): Dataset<Row> {
         val raw = readTrips(spark, dataPath)
         val types = raw.schema().fields().associate { it.name() to it.dataType() }
         val isSampled = sampleFraction != null && sampleFraction > 0.0 && sampleFraction < 1.0
         if (isSampled || expectedTypes.any { (column, type) -> types[column] != type }) {
-            return M1V2().load(spark, dataPath, sampleFraction)
+            return M1V2().load(spark, dataPath, sampleFraction, outputDir)
         }
 
         println("\n[$tag] Loading data from: $dataPath")
@@ -62,7 +62,7 @@ class M1V3 : DataLoader {
                 if (counts[mask] != 0L) addToYear(counters, year, mask, counts[mask])
             }
         }
-        printCleaningStats(counters, tag)
+        printCleaningStats(counters, outputDir, tag)
 
         return raw.withColumn("year", sf.year(sf.col("tpep_pickup_datetime"))).filter(validRecord)
     }
