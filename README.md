@@ -6,7 +6,7 @@ Pipeline de análise distribuída em **Kotlin + Apache Spark** sobre os registos
 
 ## 📁 Estrutura do Projeto
 
-* `build.gradle.kts` / `settings.gradle.kts`: Configuração de build Gradle (Kotlin DSL, JDK 17, Spark 3.5.3).
+* `build.gradle.kts` / `settings.gradle.kts`: Configuração de build Gradle (Kotlin DSL, JDK 17; compila contra a API do Spark 3.5.3 e corre no cluster com Spark 4.2.0).
 * `src/main/kotlin/compar/Main.kt`: Pipeline principal Spark em Kotlin executável via `spark-submit` ou `./gradlew run`.
 * `src/main/kotlin/compar/ops/`: Operações versionadas. `Contracts.kt` define as interfaces (`DataLoader` para o M1, `Analysis` para M2–O4) e cada operação tem o seu package (`m1/`, `m2/`, `m3/`, `o1/`, `o4/`) com uma classe por versão (`V0Baseline` = baseline gerado por IA; cada versão N parte da N-1).
 * `src/main/kotlin/compar/profiler/SparkProfiler.kt`: Utilitário em Kotlin para recolha de métricas de execução (tarefas, tempos, shuffles, spills, GC) via REST API do Spark.
@@ -26,6 +26,14 @@ Os dados são descarregados localmente e **não devem ser enviados para o reposi
 2. **Viagens dos Táxis Amarelos (Yellow Taxi Trip Records):**
    * Formato: Ficheiros mensais em Parquet (`yellow_tripdata_YYYY-MM.parquet`).
    * Exemplo de teste (Janeiro 2024): `https://d37ci6vzurychx.cloudfront.net/trip-data/yellow_tripdata_2024-01.parquet`
+   * **Dados usados no relatório: os 12 meses de 2015** (2.0 GB, 146 039 231 viagens), descarregados para `data/`:
+     ```bash
+     for m in 01 02 03 04 05 06 07 08 09 10 11 12; do
+       curl -fL -o data/yellow_tripdata_2015-$m.parquet https://d37ci6vzurychx.cloudfront.net/trip-data/yellow_tripdata_2015-$m.parquet
+     done
+     ```
+   * Versão usada: ficheiros obtidos do CDN da TLC em novembro de 2026; os 12 ficheiros de 2015 somam 2 027 058 112 bytes
+     (`yellow_tripdata_2015-01.parquet`: 175 325 767 bytes).
    * Portal oficial: NYC TLC Website (`https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page`).
 
 ---
@@ -79,8 +87,8 @@ Também podes correr localmente fora do Docker usando o Gradle:
 As operações e a versão de cada uma escolhem-se na linha de comandos (por defeito: todas as operações, com M1 v3, M2 v7 e as restantes em v0):
 
 ```bash
-# pipeline otimizado (ALL_best do relatório)
-./scripts/submit_job.sh --ops M1,M2,M3,O1,O4 --m1 v3 --m2 v7 --m3 v3 --o1 v7 --o4 v0 --profile
+# pipeline otimizado (melhor versão de cada operação no relatório)
+./scripts/submit_job.sh --ops M1,M2,M3,O1,O4 --m1 v3 --m2 v4 --m3 v3 --o1 v6 --o4 v6 --profile
 ```
 
 Opções: `--data <dir>`, `--lookup <csv>`, `--output <dir>`, `--master <url>`, `--sample <fração>`, `--ops M1,M2,...`,
@@ -108,11 +116,44 @@ Para comparar o desempenho entre diferentes versões ou pipelines completos num 
 ./scripts/benchmark.sh --o4 all --sample 0.1
 
 # Correr o pipeline completo com as melhores versões:
-./scripts/submit_job.sh --ops M1,M2,M3,O1,O4 --m1 v3 --m2 v7 --m3 v3 --o1 v7 --o4 v6 --profile
+./scripts/submit_job.sh --ops M1,M2,M3,O1,O4 --m1 v3 --m2 v4 --m3 v3 --o1 v6 --o4 v6 --profile
 ```
 
-Os resultados de dados Parquet e os ficheiros JSON com as métricas são gravados em `output/` organizados por operação (ex: `output/M3Outputs/`, `output/M3Metrics/`).
+Cada versão gera os dados em `output/outputs/<op>/<versão>/` e as métricas do profiler em
+`output/metrics/<op>/profiling_<versão>.json` (com `--runs N`: `profiling_<versão>_r<N>.json`).
 Para visualizar os gráficos e tabelas consolidadas de desempenho, abre o notebook [`notebooks/benchmarks_report.ipynb`](notebooks/benchmarks_report.ipynb) no Jupyter.
+
+### 8. Reproduzir os resultados do relatório
+
+**Ambiente usado:** Docker Desktop (Windows 11) num portátil Intel Core Ultra 7 256V (8 cores), 16 GB de RAM.
+Cluster standalone de `docker/docker-compose.yml`, imagem `spark:python3` (**Spark 4.2.0**, Scala 2.13, OpenJDK 21):
+1 master e **2 workers com 2 cores e 2 GB cada** (`./scripts/start_cluster.sh 2 2G 2`). O jar é compilado com JDK 17 e
+Kotlin 2.0.21. **Configuração não-default do Spark:** `spark.executor.memory=2g` (definida em `src/main/kotlin/compar/util/SparkUtils.kt`;
+o default é 1g). O mesmo ficheiro define `spark.driver.memory=2g`, que em client mode não tem efeito, e
+`spark.sql.adaptive.enabled=true`, que já é o default.
+
+Cada execução do benchmark corresponde a este `spark-submit`, lançado dentro do contentor `spark-master`
+(o driver corre no master, em client mode):
+```bash
+docker exec spark-master /opt/spark/bin/spark-submit --class compar.MainKt \
+  --master spark://spark-master:7077 --deploy-mode client /apps/nyc-taxi-analytics.jar \
+  --data "/data/yellow_tripdata_2015-*.parquet" --lookup /data/taxi_zone_lookup.csv \
+  --output /output/outputs/<op>/<versão> --export-metrics /output/metrics/<op>/profiling_<versão>.json \
+  --profile --ops <OP> --m1 v3 --<op> <versão>
+```
+
+Passos:
+```bash
+./scripts/start_cluster.sh 2                    # cluster com 2 workers
+./scripts/benchmark.sh --all --runs 3           # Secções 3-4: todas as versões de M1, M2, M3, O1 e O4, 3 corridas cada (~1h30)
+./scripts/cluster_bench/scaling_2015.sh         # Secção 5: pipeline otimizado com 100/20/10 % e 1/2/3 workers (~40 min)
+```
+O relatório usa a mediana das 3 corridas. A análise de escalabilidade usa M1 v2, escolhida antes das 3 corridas
+mostrarem que a v3 é mais rápida (é o que `scaling_2015.sh` corre).
+O benchmark corre cada versão num `spark-submit` novo, as operações analíticas depois de M1 v3, com 20 s de pausa entre
+operações. Os gráficos e tabelas do relatório saem do notebook `notebooks/benchmarks_report.ipynb`
+(abrir em http://localhost:8888/?token=compar e fazer *Run All*); os gráficos ficam em `output/plots/`.
+O relatório está em `docs/report.tex` (compilar com `pdflatex report && bibtex report && pdflatex report && pdflatex report`).
 
 ---
 

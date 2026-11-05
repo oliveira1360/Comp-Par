@@ -33,8 +33,8 @@
 \begin{abstract}
 We profiled and optimised a Kotlin Spark pipeline over the 146\,M trips of the 2015 NYC Yellow Taxi data on a small Spark
 standalone cluster. The baseline lost its time in repeated scans, shuffles of whole trip rows and many small stages. Removing
-them one version at a time brought the five operations from 307 to 112\,s (2.7$\times$), and the operations that shuffled whole
-rows stopped spilling and need a fraction of the memory.
+them one version at a time brought the five operations from 290 to 103\,s (2.8$\times$), and the operations that shuffled whole
+rows stopped spilling and their peak memory fell from 13.7\,GB to 64\,MB (O1).
 \end{abstract}
 
 \keywords{Apache Spark, query optimisation, profiling, shuffle, scalability}
@@ -49,7 +49,7 @@ We use the 2015 NYC TLC Yellow Taxi trip records~\cite{tlc}: 12 monthly Parquet 
 and 19 columns, plus the zone lookup table (265 rows). We started on 2024 and moved to 2015 because it has 3.5 times more
 trips, enough for shuffles and spills to show up on our small cluster. We implemented the mandatory \textbf{M1} (ingestion and
 cleaning), \textbf{M2} (temporal demand per borough, day and hour) and \textbf{M3} (monthly zone statistics with windows), and
-the optional \textbf{O1} (fare anomalies with $\mu+3\sigma$ per zone and hour) and \textbf{O4} (trip-type classification).
+the optional \textbf{O1} (fare anomalies per zone and hour) and \textbf{O4} (trip-type classification).
 
 The workload is a large table reduced to a few thousand groups and joined with a tiny table, so each query should cost about
 one Parquet scan; extra scans, shuffles of full rows and spills come from how the query is written. We picked O1 and O4
@@ -65,9 +65,7 @@ line, so each change is measured on its own against the baseline. M1 returns the
 read from it; we do not cache it, since 142\,M rows do not fit in 2\,GB executors and each operation reads only its own columns.
 Every operation writes its result as Parquet (M1 writes its per-year cleaning statistics as CSV).
 
-Figure~\ref{fig:plan} shows the physical plan of O1 (from \texttt{explain(mode="extended")}) before and after its key change.
-In v0 every trip passes through \texttt{Exchange hashpartitioning(PULocationID, hour)} and a \texttt{Sort} before the
-\texttt{Window}; in v3 the trips are only read and probed against a broadcast table built by a partial \texttt{HashAggregate}.
+Figure~\ref{fig:plan} shows the physical plan of O1 (from \texttt{explain} in extended mode) before and after its key change.
 
 \begin{figure}[t]
 \centering\tiny
@@ -110,40 +108,49 @@ the per-bucket statistics (right).}
 
 % ============================================================================
 \section{Profiling and Baseline}
-\textbf{Setup.} We measured on the course's Spark standalone cluster (\texttt{docker/docker-compose.yml}, image
+\textbf{Setup.} The DI cluster was not available, so we measured on the course's Docker Spark standalone cluster (\texttt{docker-compose.yml}, image
 \texttt{spark:python3}: Spark 4.2.0, Scala 2.13, OpenJDK 21) in Docker Desktop on a laptop with an Intel Core Ultra 7 256V
 (4 performance + 4 efficiency cores), 16\,GB RAM, NVMe SSD and Windows 11. One master and two workers with 2 cores and 2\,GB each;
-the driver runs in the master container (client mode) and the jar, data and output are mounted from Windows. Spark settings are
-the defaults (AQE on).
+the driver runs in the master container (client mode) and the jar, data and output are mounted from Windows. The only non-default
+setting is 2\,GB of executor memory (\texttt{spark.executor.memory}, default 1\,GB); AQE is on, as by default.
 
 \textbf{Methodology.} \texttt{scripts/benchmark.sh} compiles the jar once and runs every version as a separate
 \texttt{spark-submit}, so no cache or JIT state carries over. Analytical operations run after M1~v3 and we count only their own
-jobs, with 20\,s pauses between operations. Each version ran once, so when two versions have the same plan and shuffle we attribute
-a time difference to the run, not to the code. Our profiler reads the Spark REST API~\cite{spark} (stages, tasks, CPU, GC,
+jobs, with 20\,s pauses between operations. Each version ran three times and we report the median; the three runs stay within about 10\,\% of it, so
+we treat smaller differences as noise. Our profiler reads the Spark REST API~\cite{spark} (stages, tasks, CPU, GC,
 shuffle, spill, peak execution memory) into JSON, and \texttt{notebooks/benchmarks\_report.ipynb} turns it into the tables and
 charts below. Every version produces the same output as the baseline unless stated.
 
 \begin{table}[t]
 \centering\footnotesize\setlength{\tabcolsep}{3pt}
-\caption{Baseline (every operation at v0) on the cluster. ``Heaviest stage'' is the task time of the most expensive stage.}
+\caption{Baseline (every operation at v0) on the cluster, median of three runs. ``Heaviest stage'' is the task time of the
+most expensive stage; the notebook lists the duration of every stage.}
 \label{tab:baseline}
 \begin{tabular}{lrrrrrl}
 \toprule
 Op & wall & stages & tasks & shuffle & spill & heaviest stage \\
-   & (s)  &        &       & (MB)    & (MB)  & (task time) \\
+   & (s)  &        &       & R / W (MB) & (MB)  & (task time) \\
 \midrule
-M1 & 35.1 & 15 & 135 & 0       & 0       & scan, 60\,s (2 such) \\
-M2 & 25.4 & 11 & 71  & 1.4     & 0       & scan, 78\,s \\
-M3 & 97.7 & 44 & 254 & 2.5     & 0       & scan, 129\,s (3 such) \\
-O1 & 80.5 & 16 & 195 & 1{,}515 & 1{,}319 & window, 180\,s \\
-O4 & 68.0 & 18 & 247 & 1{,}799 & 0       & shuffle write, 138\,s \\
+M1 & 40.9 & 15 & 135 & 0 / 0 & 0       & scan, 68\,s (2 such) \\
+M2 & 21.6 & 11 & 71  & 1.4 / 0.7 & 0       & scan, 65\,s \\
+M3 & 90.9 & 44 & 254 & 2.5 / 2.3 & 0       & scan, 110\,s (3 such) \\
+O1 & 68.8 & 16 & 195 & 1{,}515 / 1{,}515 & 1{,}319 & window, 143\,s \\
+O4 & 67.6 & 18 & 247 & 1{,}799 / 1{,}799 & 0       & shuffle write, 136\,s \\
 \midrule
-Total & \textbf{306.7} & & & & & \\
+Total & \textbf{289.8} & & & & & \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\textbf{What we found} (Table~\ref{tab:baseline}):
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.64\columnwidth]{figures/ui_o1_window_stage.png}
+\caption{Spark UI (History Server) of the window stage of O1~v0, from an extra run with the event log on: all 142.6\,M
+trips are shuffled (1.5\,GB) and almost every task spills, by similar amounts.}
+\label{fig:ui}
+\end{figure}
+
+\textbf{What we found} (Table~\ref{tab:baseline}, Figure~\ref{fig:ui}):
 \begin{itemize}
 \item \emph{Repeated scans.} M1 decodes every row twice (the per-year statistics and the second \texttt{count()}), and M3 three
 times, because \texttt{show()}, the count of flagged rows and the write are separate actions and nothing is cached. M3 is the
@@ -152,202 +159,186 @@ slowest operation although its result has about 3{,}000 rows.
 disk and the window stage is the most expensive of the baseline. O4 shuffles 1.8\,GB to join the bucket classes back to the trips.
 \item \emph{Many small stages.} M3 works on a few thousand rows after the aggregation, but each window adds an Exchange and a Sort
 (44 stages).
-\item \emph{Little to gain.} M2 shuffles 1.4\,MB: its plan was already close to one scan.
-\item \emph{No skew.} Each scan task reads one file and the shuffle keys have thousands of values. The largest slowest/median task
-ratio is 2.9$\times$, in the spilling window stage of O1 (1.3$\times$ once the window is gone), far from the 10$\times$ of real skew.
+
+\item \emph{No skew.} Each scan task reads one file and the shuffle keys have thousands of values. In the stages that do the work the slowest
+task takes at most 1.9$\times$ the median (the spilling window of O1), far from the 10$\times$ of real skew.
 \end{itemize}
 
 % ============================================================================
 \section{Optimisation Study}
-Each subsection follows one operation version by version. Figure~\ref{fig:evolution} shows how time and memory change between
+Each subsection is one optimisation, in version order per operation. Figure~\ref{fig:evolution} shows how time and memory change between
 versions and Table~\ref{tab:summary} summarises all of them.
 
 \begin{figure*}[t]
 \centering
-\includegraphics[width=0.40\textwidth]{figures/evolution_time.pdf}\hspace{0.06\textwidth}
-\includegraphics[width=0.40\textwidth]{figures/evolution_memory.pdf}
+\includegraphics[width=0.32\textwidth]{figures/evolution_time.pdf}\hspace{0.06\textwidth}
+\includegraphics[width=0.32\textwidth]{figures/evolution_memory.pdf}
 \caption{Wall time (left) and peak execution memory (right, log scale) of every version, on the cluster with the 2015 data.
 Memory is the sum of the task peaks per stage, as Spark reports it; M1~v3 bypasses Spark's operators and reports none.}
 \label{fig:evolution}
 \end{figure*}
 
+\subsection{M1 v1: one scan}
+\pa The baseline scans the data several times and casts every column of every row. \pb All counters can come from one pass, and
+most columns already have the right type. \pc One aggregation computes the total, the five criteria and the valid rows; the schema
+is checked once and only wrong types are cast. \pd 2.14$\times$ faster, with a third of the jobs and half the CPU time.
+
+\subsection{M1 v2: bitmask per row}
+\pa Seven conditional sums each evaluate their own condition on every row. \pb One integer per row with a bit per criterion should be
+cheaper. \pc v2 counts per (year, bitmask), a few dozen groups, and the driver derives the counters. \pd 4\,\% less CPU, same time.
+
+\subsection{M1 v3: direct columnar reader}
+\pa Spark still turns every column batch into rows before counting. \pb Reading the column vectors ourselves should leave only the
+cost of decoding Parquet. \pc Each task reads the batches of one file, builds the bitmasks in plain loops and counts in an array;
+the driver adds the 12 arrays. \pd 2 stages, 13 tasks, no shuffle, a quarter less CPU and 1.44$\times$ faster than v2 (3.2$\times$ over v0). About 30\,\% of the task time is still spent waiting for the files, read through the mount from Windows.
+
+\subsection{M2 v1: projection and broadcast}
+\pa The baseline reads every column and joins the zone table. \pb Selecting five columns and forcing a broadcast should read less.
+\pc v1 does both. \pd Same plan, stages, shuffle and time as v0: Catalyst was already pruning and broadcasting the 12\,KB table.
+
+\subsection{M2 v2: no global sort}
+\pa The \texttt{orderBy} before the partitioned write adds a range-partitioning shuffle, but \pb \texttt{partitionBy(borough)} only
+needs rows grouped by borough. \pc v2 uses \texttt{repartition(borough)}. \pd Two stages fewer and half the shuffle, but 6\,\% slower (22.9 vs 21.6\,s).
+
+\subsection{M2 v3: aggregate before the join}
+\pa The zone join is applied to every trip. \pb Aggregating first by (zone, day, hour) shrinks its input to a few thousand rows.
+\pc v3 aggregates per zone, then joins and aggregates per borough. \pd A third of the peak memory, about the same time.
+
+\subsection{M2 v4: no join}
+\pa v3 still has a join and a second aggregation. \pb Zone$\rightarrow$borough is a 265-entry map, not a join. \pc v4 builds the
+map on the driver, packs (borough, day, hour) into 11 bits and aggregates once. \pd Peak memory 1.4\,GB$\rightarrow$32\,MB, same time.
+
+\subsection{M2 v5--v7: less work per row}
+\pa v4 evaluates a \texttt{CASE WHEN} chain and \texttt{unix\_timestamp} on every row. \pb Less work per row and fewer stages should
+help. \pc v5 uses an array lookup and divides once per group, v6 writes with \texttt{coalesce(1)}, v7 reads the CSV on the driver.
+\pd All stay within the range of the runs (21.1--21.9\,s): the removed stages were cheap and \texttt{coalesce(1)} puts
+the last step in one task. M2 is bound by its scan and no version moves its time, so we keep v4, which needs the least memory.
+
+\subsection{M3 v1: cache the result}
+\pa \texttt{show()}, the count of flagged rows and the write each read and aggregate the trips again. \pb If the small final table
+is cached, the later actions cost almost nothing. \pc v1 caches the result (about 3{,}000 rows) and broadcasts the zone table.
+\pd One heavy scan instead of three: 1.54$\times$ faster, under half the CPU. The cache keeps 200 shuffle partitions, so tasks go
+from 254 to about 1{,}000 and the reported peak memory to 6.4\,GB for tiny data.
+
+\subsection{M3 v2: integer keys}
+\pa \texttt{date\_format} builds a string for each of 146\,M rows and the grouping key has strings. \pb Grouping by integers and
+formatting after the aggregation moves that work to 3{,}000 rows. \pc v2 groups by (\texttt{PULocationID},
+$\text{year}\cdot100+\text{month}$). \pd Another 1.35$\times$, and CPU time halves again.
+
+\subsection{M3 v3: windows on the driver}
+\pa Each window still needs its own Exchange and Sort for 3{,}000 rows. \pb A loop on the driver should be cheaper than scheduling
+dozens of stages. \pc v3 collects the aggregated rows and computes the rank, the 3-month rolling share and the deviation flag
+(Welford~\cite{welford}) in Kotlin. \pd 48$\rightarrow$8 stages, about 1{,}000$\rightarrow$38 tasks and 5.0$\times$ faster than v0,
+the largest gain of the project. We also found that the original flag could never fire: with the current month inside the 3-month
+window, no month can be more than 1.155 standard deviations from the mean, below the 1.5 threshold. All versions now use the
+three \emph{previous} months.
+
+\subsection{O1 v1 and v2: projection and broadcast}
+\pa The baseline carries all columns through several projections and joins the zone table. \pb One projection and a forced broadcast
+should move less data. \pc v1 uses one \texttt{select}, v2 adds \texttt{broadcast(zones)}. \pd Same plan, shuffle and spill:
+Catalyst was already doing both, and the 6--9\,\% gain is about the spread of the runs of v0.
+
 \begin{table*}[t]
-\centering\footnotesize\setlength{\tabcolsep}{3.5pt}
-\caption{Summary of all optimisations on the cluster (2015 data, one run each; memory is the peak execution memory).
-The best versions (M1~v2, M2~v4, M3~v3, O1~v6, O4~v6) take 112.1\,s together instead of 306.7\,s for v0 (2.74$\times$).}
+\centering\scriptsize\setlength{\tabcolsep}{4pt}
+\caption{Summary of all optimisations on the cluster (2015 data, median and range of three runs; memory is the peak execution memory; CPU times quoted in the text are in the notebook).
+The best versions (M1~v3, M2~v4, M3~v3, O1~v6, O4~v6) take 103.2\,s together instead of 289.8\,s for v0 (2.81$\times$).}
 \label{tab:summary}
-\begin{tabular}[t]{llrrr}
+\begin{tabular}[t]{@{}llrrrr@{}}
 \toprule
-Op & ver & wall (s) & vs v0 & mem (MB) \\
+Op & version & wall (s) & range (s) & vs v0 & mem (MB) \\
 \midrule
-M1 & v0 & 35.1 & 1.00 & 32 \\
- & v1 & 19.2 & 1.83 & 32 \\
- & v2 & 18.6 & 1.89 & 32 \\
- & v3 & 18.8 & 1.87 & 0 \\
+M1 & v0 baseline & 40.9 & 37.1--42.9 & 1.00 & 32 \\
+ & v1 one scan & 19.1 & 18.6--21.0 & 2.14 & 32 \\
+ & v2 bitmask & 18.6 & 18.4--18.6 & 2.20 & 32 \\
+ & v3 columnar reader & 12.9 & 12.7--13.8 & 3.17 & 0 \\
 \midrule
-M2 & v0 & 25.4 & 1.00 & 1{,}412 \\
- & v1 & 37.7 & 0.67 & 1{,}412 \\
- & v2 & 27.9 & 0.91 & 1{,}412 \\
- & v3 & 22.3 & 1.14 & 515 \\
- & v4 & 20.5 & 1.24 & 32 \\
- & v5 & 21.4 & 1.19 & 32 \\
- & v6 & 23.4 & 1.09 & 64 \\
- & v7 & 26.0 & 0.98 & 64 \\
+M2 & v0 baseline & 21.6 & 20.9--22.3 & 1.00 & 1{,}412 \\
+ & v1 projection, broadcast & 21.6 & 20.9--22.1 & 1.00 & 1{,}412 \\
+ & v2 no global sort & 22.9 & 22.5--22.9 & 0.94 & 1{,}412 \\
+ & v3 aggregate first & 22.1 & 21.5--22.1 & 0.98 & 515 \\
+ & v4 no join & 21.7 & 20.4--21.8 & 1.00 & 32 \\
+ & v5 array lookup & 21.6 & 21.3--22.4 & 1.00 & 32 \\
+ & v6 coalesce(1) & 21.1 & 20.3--21.5 & 1.02 & 64 \\
+ & v7 CSV on driver & 21.9 & 20.7--22.3 & 0.99 & 64 \\
+\midrule
+M3 & v0 baseline & 90.9 & 85.5--92.4 & 1.00 & 1{,}028 \\
+ & v1 cache result & 59.2 & 57.4--60.8 & 1.54 & 6{,}412 \\
+ & v2 integer keys & 43.9 & 43.0--44.9 & 2.07 & 6{,}412 \\
+ & v3 windows on driver & 18.2 & 17.4--18.3 & 4.99 & 32 \\
 \bottomrule
 \end{tabular}\hfill
-\begin{tabular}[t]{llrrr}
+\begin{tabular}[t]{@{}llrrrr@{}}
 \toprule
-Op & ver & wall (s) & vs v0 & mem (MB) \\
+Op & version & wall (s) & range (s) & vs v0 & mem (MB) \\
 \midrule
-M3 & v0 & 97.7 & 1.00 & 1{,}028 \\
- & v1 & 68.2 & 1.43 & 6{,}412 \\
- & v2 & 53.9 & 1.81 & 6{,}412 \\
- & v3 & 19.3 & 5.06 & 32 \\
+O1 & v0 baseline & 68.8 & 64.6--71.8 & 1.00 & 13{,}703 \\
+ & v1 projection & 63.1 & 61.8--64.6 & 1.09 & 13{,}703 \\
+ & v2 + broadcast & 64.8 & 63.0--66.5 & 1.06 & 13{,}703 \\
+ & v3 aggregation, no window & 39.3 & 38.4--40.2 & 1.75 & 1{,}544 \\
+ & v4 integer keys & 36.9 & 35.4--39.0 & 1.86 & 1{,}029 \\
+ & v5 array, no join & 31.4 & 31.2--31.4 & 2.19 & 64 \\
+ & v6 integer counters & 30.9 & 30.4--31.8 & 2.23 & 64 \\
+ & v7 per-mile compare & 31.1 & 30.9--31.7 & 2.21 & 64 \\
 \midrule
-O1 & v0 & 80.5 & 1.00 & 13{,}703 \\
- & v1 & 83.5 & 0.96 & 13{,}703 \\
- & v2 & 75.6 & 1.06 & 13{,}639 \\
- & v3 & 43.2 & 1.86 & 1{,}544 \\
- & v4 & 39.5 & 2.04 & 1{,}029 \\
- & v5 & 33.5 & 2.40 & 64 \\
- & v6 & 31.4 & 2.56 & 64 \\
- & v7 & 32.0 & 2.52 & 64 \\
-\bottomrule
-\end{tabular}\hfill
-\begin{tabular}[t]{llrrr}
-\toprule
-Op & ver & wall (s) & vs v0 & mem (MB) \\
+O4 & v0 baseline & 67.6 & 62.9--67.8 & 1.00 & 1{,}040 \\
+ & v1 projection & 64.4 & 63.0--68.4 & 1.05 & 520 \\
+ & v2 broadcast classes & 47.4 & 47.2--49.8 & 1.43 & 520 \\
+ & v3 integer keys & 35.7 & 34.1--38.4 & 1.89 & 1{,}029 \\
+ & v4 array, no join & 33.0 & 32.0--33.2 & 2.05 & 32 \\
+ & v5 one scan & 27.7 & 27.1--28.6 & 2.44 & 6{,}450 \\
+ & v6 finish on driver & 19.5 & 19.4--19.6 & 3.47 & 99 \\
 \midrule
-O4 & v0 & 68.0 & 1.00 & 1{,}040 \\
- & v1 & 68.3 & 1.00 & 520 \\
- & v2 & 52.9 & 1.29 & 520 \\
- & v3 & 37.3 & 1.82 & 1{,}029 \\
- & v4 & 33.2 & 2.05 & 32 \\
- & v5 & 29.5 & 2.31 & 6{,}450 \\
- & v6 & 22.3 & 3.05 & 99 \\
-\midrule
-All & best & 112.1 & 2.74 & \\
+All & best versions & 103.2 & & 2.81 & \\
 \bottomrule
 \end{tabular}
 \end{table*}
 
-\subsection{M1: one scan and a direct columnar reader}
-\ver{M1 v1: one scan}
-\pa The baseline scans the data several times and casts every column of every row. \pb All counters can come from one pass, and
-most columns already have the right type. \pc One aggregation computes the total, the five criteria and the valid rows; the schema
-is checked once and only wrong types are cast. \pd 1.83$\times$ faster, with a third of the jobs and half the CPU time.
+\subsection{O1 v3: aggregation instead of a window}
+\pa A window cannot combine on the map side, so every trip is shuffled and large buckets spill. \pb The mean and standard deviation per bucket are an aggregation with at most 263$\times$24 groups. \pc v3 uses \texttt{groupBy(zone, hour)}, which aggregates before the shuffle, and
+broadcasts the 6{,}312 thresholds back to the trips. \pd Shuffle 1.5\,GB$\rightarrow$3\,MB, no spill, nine times less peak memory and 1.65$\times$ faster than v2 (1.75$\times$ over v0). The price, a second scan, costs far less than shuffling and spilling.
 
-\ver{M1 v2: bitmask per row}
-\pa Seven conditional sums each evaluate their own condition on every row. \pb One integer per row with a bit per criterion should be
-cheaper. \pc v2 counts per (year, bitmask), a few dozen groups, and the driver derives the counters. \pd 10\,\% less CPU, same time.
-
-\ver{M1 v3: direct columnar reader}
-\pa Spark still turns every column batch into rows before counting. \pb Reading the column vectors ourselves should leave only the
-cost of decoding Parquet. \pc Each task reads the batches of one file, builds the bitmasks in plain loops and counts in an array;
-the driver adds the 12 arrays. \pd 2 stages, 13 tasks, no shuffle and less CPU, but the same time as v2, although locally it was
-the fastest version by far. About 40\,\% of the task time is spent waiting for the files, which are read through the mount from
-Windows, so the reading speed sets the time, not the CPU.
-
-\subsection{M2: little room above the scan}
-M2 was already bound by its scan; the best version is 1.24$\times$ faster than v0.
-
-\ver{M2 v1: projection and broadcast}
-\pa The baseline reads every column and joins the zone table. \pb Selecting five columns and forcing a broadcast should read less.
-\pc v1 does both. \pd Same plan, stages and shuffle as v0: Catalyst was already pruning and broadcasting the 12\,KB table. The run
-was slower only because one task took twice as long as any task of v0, which is noise of a single run.
-
-\ver{M2 v2: no global sort}
-\pa The \texttt{orderBy} before the partitioned write adds a range-partitioning shuffle, but \pb \texttt{partitionBy(borough)} only
-needs rows grouped by borough. \pc v2 uses \texttt{repartition(borough)}. \pd Two stages fewer, half the shuffle, time close to v0.
-
-\ver{M2 v3: aggregate before the join}
-\pa The zone join is applied to every trip. \pb Aggregating first by (zone, day, hour) shrinks its input to a few thousand rows.
-\pc v3 aggregates per zone, then joins and aggregates per borough. \pd A third of the peak memory and a fifth less time than v2.
-
-\ver{M2 v4: no join}
-\pa v3 still has a join and a second aggregation. \pb Zone$\rightarrow$borough is a 265-entry map, not a join. \pc v4 builds the
-map on the driver, packs (borough, day, hour) into 11 bits and aggregates once. \pd The fastest version; peak memory 1.4\,GB$\rightarrow$32\,MB.
-
-\ver{M2 v5--v7: less work per row}
-\pa v4 evaluates a \texttt{CASE WHEN} chain and \texttt{unix\_timestamp} on every row. \pb Less work per row and fewer stages should
-help. \pc v5 uses an array lookup and divides once per group, v6 writes with \texttt{coalesce(1)}, v7 reads the CSV on the driver.
-\pd Each is a little slower than the one before: the removed stages were cheap, \texttt{coalesce(1)} puts the last step in one task
-and v7 uses more CPU. Removing stages only pays off when scheduling them is the cost.
-
-\subsection{M3: one scan, integer keys, windows on the driver}
-\ver{M3 v1: cache the result}
-\pa \texttt{show()}, the count of flagged rows and the write each read and aggregate the trips again. \pb If the small final table
-is cached, the later actions cost almost nothing. \pc v1 caches the result (about 3{,}000 rows) and broadcasts the zone table.
-\pd One heavy scan instead of three: 1.43$\times$ faster, under half the CPU. The cache keeps 200 shuffle partitions, so tasks go
-from 254 to about 1{,}000 and the reported peak memory to 6.4\,GB for tiny data.
-
-\ver{M3 v2: integer keys}
-\pa \texttt{date\_format} builds a string for each of 146\,M rows and the grouping key has strings. \pb Grouping by integers and
-formatting after the aggregation moves that work to 3{,}000 rows. \pc v2 groups by (\texttt{PULocationID},
-$\text{year}\cdot100+\text{month}$). \pd Another 1.27$\times$, and CPU time halves again.
-
-\ver{M3 v3: windows on the driver}
-\pa Each window still needs its own Exchange and Sort for 3{,}000 rows. \pb A loop on the driver should be cheaper than scheduling
-dozens of stages. \pc v3 collects the aggregated rows and computes the rank, the 3-month rolling share and the deviation flag
-(Welford~\cite{welford}) in Kotlin. \pd 48$\rightarrow$8 stages, about 1{,}000$\rightarrow$38 tasks and 5.1$\times$ faster than v0,
-the largest gain of the project. We also found that the original flag could never fire (with the current month inside the 3-row
-frame, $|x-\bar{x}|/s \le 1.155 < 1.5$), so all versions now use the three \emph{previous} months.
-
-\subsection{O1: from a window to a broadcast}
-\ver{O1 v1 and v2: projection and broadcast}
-\pa The baseline carries all columns through several projections and joins the zone table. \pb One projection and a forced broadcast
-should move less data. \pc v1 uses one \texttt{select}, v2 adds \texttt{broadcast(zones)}. \pd Same plan, shuffle and spill:
-Catalyst was already doing both, and the times are within single-run noise.
-
-\ver{O1 v3: aggregation instead of a window}
-\pa A window cannot combine on the map side, so every trip is shuffled and large buckets spill. \pb $\mu$ and $\sigma$ per bucket are
-an aggregation with at most 263$\times$24 groups. \pc v3 uses \texttt{groupBy(zone, hour)}, which aggregates before the shuffle, and
-broadcasts the 6{,}312 thresholds back to the trips. \pd Shuffle 1.5\,GB$\rightarrow$3\,MB, no spill, nine times less peak memory and
-1.86$\times$ faster. The price, a second scan, costs far less than shuffling and spilling.
-
-\ver{O1 v4 and v5: integer keys and an array instead of the join}
+\subsection{O1 v4 and v5: integer keys and an array instead of the join}
 \pa The broadcast join hashes and probes every trip, and the aggregation carries strings. \pb Integer keys and an array lookup should
-be cheaper. \pc v4 packs a 14-bit bucket key and an 8-bit rate key (borough resolved on the driver); v5 puts the thresholds in a
-67\,KB array read with \texttt{element\_at}, so no join is left. \pd 10--15\,\% per step; after v5 peak memory is 64\,MB.
+be cheaper. \pc v4 groups by one integer key per bucket and per rate (borough resolved on the driver); v5 puts the thresholds in a
+67\,KB array read with \texttt{element\_at}, so no join is left. \pd 6\,\% and 15\,\% faster than the previous version; after v5 peak memory is 64\,MB.
 
-\ver{O1 v6 and v7: less arithmetic per trip}
-\pa v5 updates a floating-point average per trip and converts every fare to per-km in both scans. \pb The rate can come from two
-integer counts, and $x>\mu+3\sigma$ is unchanged by scaling everything by $1/1.609$. \pc v6 uses integer counters; v7 compares in
-fare per mile. \pd Both within noise of v5: O1 now costs about its two scans, 2.56$\times$ faster than v0.
+\subsection{O1 v6 and v7: less arithmetic per trip}
+\pa v5 updates a floating-point average and converts every distance to km, per trip and in both scans. \pb The anomaly rate
+can come from two integer counts, and comparing in fare per mile gives the same anomalies without converting. \pc v6 uses integer
+counters; v7 compares per mile. \pd 30.9 and 31.1\,s against 31.4\,s for v5, within noise: O1 now costs about its two scans,
+2.23$\times$ faster than v0.
 
-\subsection{O4: removing the shuffle, then the second scan}
-\ver{O4 v1: one projection}
+\subsection{O4 v1: one projection}
 \pa Both branches share a wide DataFrame built with chained \texttt{withColumn}. \pb One \texttt{select} of seven columns should
 make the shuffled rows smaller. \pc v1 projects them and derives hour and month in one step. \pd 10\,\% less shuffle and half the
 peak memory, same time: the 1.6\,GB shuffle of every trip is still there.
 
-\ver{O4 v2: broadcast the bucket classes}
+\subsection{O4 v2: broadcast the bucket classes}
 \pa The join of trips and classified buckets is a sort-merge join that shuffles all 142\,M trips. \pb The planner cannot know the
 aggregation has at most 6{,}312 rows, but we do. \pc v2 wraps the classes in \texttt{broadcast()}. \pd Shuffle
 1.6\,GB$\rightarrow$1.7\,MB and a quarter less time.
 
-\ver{O4 v3: integer keys}
+\subsection{O4 v3: integer keys}
 \pa The join and aggregations use a two-column key and strings (\texttt{date\_format} for every trip). \pb Integers move the string
-work to the 48 output rows. \pc v3 packs (zone, hour) into 14 bits and the zone type into 2. \pd 30\,\% less CPU, 1.42$\times$ over v2.
+work to the 48 output rows. \pc v3 replaces the two-column key and the strings with one integer key. \pd 30\,\% less CPU, 1.33$\times$ over v2.
 
-\ver{O4 v4: an array instead of the join}
+\subsection{O4 v4: an array instead of the join}
 \pa The broadcast join still hashes every trip and three floating-point averages are updated per row. \pb An array indexed by the key
 and integer counters should be cheaper. \pc v4 uses integer sums and an 8\,KB array of zone types read with \texttt{element\_at}.
-\pd 10\,\% faster; peak memory 1\,GB$\rightarrow$32\,MB, as no hash table is built.
+\pd 8\,\% faster; peak memory 1\,GB$\rightarrow$32\,MB, as no hash table is built.
 
-\ver{O4 v5: one scan}
+\subsection{O4 v5: one scan}
 \pa Every version so far reads the data twice: to classify the buckets and to compute the monthly statistics. \pb Trips with the same
 (month, zone, hour) share a class, and counts, sums and sums of squares add up, so mean and standard deviation can come from about
-38{,}000 partial groups. \pc v5 aggregates the trips once into them, caches them and finishes with two small Spark jobs. \pd A
-quarter less CPU and 11\,\% less time, but 22 stages, 1{,}500 tasks and 6.4\,GB of reported peak memory, as in M3~v1.
+38{,}000 partial groups. \pc v5 aggregates the trips once into them, caches them and finishes with two small Spark jobs. \pd A third less CPU and 16\,\% less time, but 22 stages, 1{,}500 tasks and 6.4\,GB of reported peak memory, as in M3~v1.
 
-\ver{O4 v6: finish on the driver}
+\subsection{O4 v6: finish on the driver}
 \pa v5 spends stages and tasks to reduce 38{,}000 rows. \pb As in M3~v3, plain code on the driver should be cheaper. \pc v6 packs
 (month, zone, hour) into one integer, aggregates the trips once, collects the 38{,}000 rows (2\,MB) and finishes in Kotlin.
-\pd 6 stages, 38 tasks, 99\,MB and 3.05$\times$ faster than v0; results match v0 up to the last digits of the standard deviation.
+\pd 6 stages, 38 tasks, 99\,MB and 3.47$\times$ faster than v0; results match v0 up to the last digits of the standard deviation.
 
 \subsection{Summary}
-Table~\ref{tab:summary} lists every version: the best ones take 112.1\,s instead of 306.7\,s (2.74$\times$). The largest gains
+In Table~\ref{tab:summary}, the largest gains
 come from removing work: extra scans, shuffles of whole rows and stages for a few thousand rows (M1~v1, M3~v3, O1~v3, O4~v2,
 O4~v6). Memory falls when a join or hash table goes away (M2~v4, O1~v5, O4~v4), while caching a small result in 200 partitions
 shows up as a memory peak even when it saves time (M3~v1, O4~v5). What Catalyst already did on its own (projections and broadcasts
@@ -355,13 +346,12 @@ of the zone table) gave nothing.
 
 % ============================================================================
 \section{Analysis}
-We ran the optimised pipeline (the best version of each operation) with \texttt{scripts/cluster\_bench/scaling\_2015.sh}, which
-calls the same \texttt{benchmark.sh} three times per condition; we report the median and give the range in Figure~\ref{fig:scaling}.
+We ran the optimised pipeline (the best versions, but M1~v2, chosen before the repeated runs showed v3 to be faster) with \texttt{scripts/cluster\_bench/scaling\_2015.sh}, which runs the same benchmark three times per condition (Figure~\ref{fig:scaling}).
 
 \begin{figure}[t]
 \centering
 \begin{tikzpicture}
-\begin{axis}[width=0.54\columnwidth,height=4.1cm,xlabel={\% of the data},ylabel={pipeline time (s)},
+\begin{axis}[width=0.54\columnwidth,height=3.6cm,xlabel={\% of the data},ylabel={pipeline time (s)},
   xmin=0,xmax=1.1,ymin=0,ymax=125,xtick={0.1,0.2,0.5,1},xticklabels={10,20,50,100},
   label style={font=\scriptsize},tick label style={font=\scriptsize},
   legend style={font=\tiny,at={(0.98,0.03)},anchor=south east,draw=none,fill=white}]
@@ -371,7 +361,7 @@ calls the same \texttt{benchmark.sh} three times per condition; we report the me
 \end{axis}
 \end{tikzpicture}\hfill
 \begin{tikzpicture}
-\begin{axis}[width=0.54\columnwidth,height=4.1cm,xlabel={workers (2 cores each)},ylabel={speedup vs.\ 1 worker},
+\begin{axis}[width=0.54\columnwidth,height=3.6cm,xlabel={workers (2 cores each)},ylabel={speedup vs.\ 1 worker},
   xmin=0.5,xmax=3.5,ymin=0,ymax=3.3,xtick={1,2,3},label style={font=\scriptsize},tick label style={font=\scriptsize},
   legend style={font=\tiny,at={(0.02,0.98)},anchor=north west,draw=none,fill=none}]
 \addplot[dashed,gray,domain=1:3,samples=3] {x};
@@ -379,27 +369,26 @@ calls the same \texttt{benchmark.sh} three times per condition; we report the me
 \legend{ideal,measured}
 \end{axis}
 \end{tikzpicture}
-\caption{Optimised pipeline on the cluster, 2015 data (median of 3, bars show the range). Left: time vs.\ fraction of the data
-(2 workers). Right: speedup with 1, 2 and 3 workers on the full data.}
+\caption{Optimised pipeline, median of 3 runs (bars: range). Left: time vs.\ data fraction (2 workers). Right: speedup vs.\ workers (full data).}
 \label{fig:scaling}
 \end{figure}
 
-\textbf{Dataset scale.} The time grows much less than the data. With 10\,\% of the trips the pipeline takes 75.2\,s, 78\,\% of the 96.6\,s of the full data, and with 20\,\% it takes 83\,\%: ten times less data saves only a fifth of the time. A straight line through the three points gives about 73\,s that do not depend on the fraction and 24\,s that do. Two things make the fixed part so large. Scheduling the jobs and stages, reading the zone table and the work on the driver cost the same for any input. And \texttt{-{}-sample} draws the rows \emph{after} reading, so every Parquet file is still opened, read through the mount and decoded; only the work after the scan shrinks. That is why O4, which still aggregates every trip, drops by 31\,\%, while M1, which is almost only the read, drops by 18\,\%.
+\textbf{Dataset scale.} The time grows much less than the data. With 10\,\% of the trips the pipeline takes 75.2\,s, 78\,\% of the 96.6\,s of the full data, and with 20\,\% it takes 83\,\%. A straight line through the three points gives about 73\,s that do not depend on the fraction and 24\,s that do. Two things make the fixed part so large. Scheduling the jobs and stages, reading the zone table and the work on the driver cost the same for any input. And \texttt{-{}-sample} draws the rows \emph{after} reading, so every Parquet file is still opened, read through the mount and decoded; only the work after the scan shrinks. That is why O4, which still aggregates every trip, drops by 31\,\%, while M1, which is almost only the read, drops by 18\,\%.
 
-\textbf{Cluster size.} With 2 workers the pipeline is 1.18$\times$ faster than with one (efficiency 59\,\%), and with 3 it is no faster than with one (0.98$\times$, efficiency 33\,\%), with the widest spread between runs. The deviation from the ideal line has three causes. The fixed cost on the driver and in scheduling does not shrink with more executors. The scans have one task per file (13 tasks), so with 4 or 6 cores the last wave is almost empty. Most important, all workers are containers on the same laptop and share its 8 cores (half of them efficiency cores), its memory bandwidth and the mount through which every file is read. The executor CPU time for the same work grows from 157 to 224 and 309\,s with 1, 2 and 3 workers: the extra executors mostly compete for the same hardware. On real machines, each with its own cores and disk, we would expect the speedup to follow the scans much more closely.
+\textbf{Cluster size.} With 2 workers the pipeline is 1.18$\times$ faster than with one (efficiency 59\,\%), and with 3 it is no faster than with one (0.98$\times$, efficiency 33\,\%), with the widest spread between runs. The deviation from the ideal line has three causes. The fixed cost on the driver and in scheduling does not shrink with more executors. The scans have one task per file (13 tasks), so with 4 or 6 cores the last wave is almost empty. Most important, all workers are containers on the same laptop and share its 8 cores (half of them efficiency cores), its memory bandwidth and the mount through which every file is read. The executor CPU time for the same work grows from 157 to 224 and 309\,s with 1, 2 and 3 workers: the extra executors mostly compete for the same hardware.
+
 
 % ============================================================================
 \section{Discussion}
 \textbf{What is left.} Each operation now costs roughly the scans it needs: one pass for M1, M2, M3 and O4, two for O1. On the
-cluster the next limit is reading the files through the mount. Every operation still reads the same files again; materialising
-the cleaned data once (a cache with enough memory, or a narrower Parquet file) would fix this.
+cluster the next limit is reading the files through the mount. Every operation reads the same files again; materialising the cleaned data
+once (a large enough cache or a narrower Parquet file) would avoid this.
 
-\textbf{Limitations.} Each version of Section~4 ran once, so a slow task can move a result (M2~v1); we only draw conclusions when
-the plan metrics change as well. The Docker cluster shares the laptop's CPUs, so it shows the overhead of a cluster but not what
-real machines would give. Peak memory is the sum of task peaks per stage, too high for stages with many tasks (M3~v1, O4~v5), and
-on the cluster Spark does not report Parquet input bytes, so we reason about scans from the plans.
-\textbf{With more time} we would repeat every version three times, run on real machines (the DI cluster) and measure the cost of
-materialising the output of M1.
+\textbf{Limitations.} Three runs per version separate real changes from noise only above about 10\,\%, so for M2, O1~v1/v2 and O1~v6/v7
+we rely on the plan metrics. Peak memory is the sum of task peaks per stage, too high for stages with many tasks (M3~v1, O4~v5), and
+on the cluster Spark does not report Parquet input bytes, so we reason
+about scans from the plans. The baseline total sums separate runs per operation.
+\textbf{With more time} we would run more repetitions on the DI cluster.
 
 
 % ============================================================================
@@ -419,6 +408,10 @@ Andr\'e Nunes & M2, O1, O4, profiler, Docker benchmark & \todo{\%} \\
 \bottomrule
 \end{tabular}
 
+
+\section*{Comments and suggestions}
+Access to the DI cluster during the project would have let us measure scaling on separate machines instead of containers
+sharing one laptop.
 
 \bibliographystyle{acm}
 \bibliography{refs}
