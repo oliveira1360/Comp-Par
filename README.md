@@ -6,7 +6,7 @@ Pipeline de análise distribuída em **Kotlin + Apache Spark** sobre os registos
 
 ## 📁 Estrutura do Projeto
 
-* `build.gradle.kts` / `settings.gradle.kts`: Configuração de build Gradle (Kotlin DSL, JDK 17; compila contra a API do Spark 3.5.3 e corre no cluster com Spark 4.2.0).
+* `build.gradle.kts` / `settings.gradle.kts`: Configuração de build Gradle (Kotlin DSL, JDK 17; compila contra a API do Spark 3.5.3 e corre no cluster com Spark 4.2.0/4.2.1).
 * `src/main/kotlin/compar/Main.kt`: Pipeline principal Spark em Kotlin executável via `spark-submit` ou `./gradlew run`.
 * `src/main/kotlin/compar/ops/`: Operações versionadas. `Contracts.kt` define as interfaces (`DataLoader` para o M1, `Analysis` para M2–O4) e cada operação tem o seu package (`m1/`, `m2/`, `m3/`, `o1/`, `o4/`) com uma classe por versão (`V0Baseline` = baseline gerado por IA; cada versão N parte da N-1).
 * `src/main/kotlin/compar/profiler/SparkProfiler.kt`: Utilitário em Kotlin para recolha de métricas de execução (tarefas, tempos, shuffles, spills, GC) via REST API do Spark.
@@ -125,9 +125,15 @@ Para visualizar os gráficos e tabelas consolidadas de desempenho, abre o notebo
 
 ### 8. Reproduzir os resultados do relatório
 
-**Ambiente usado:** Docker Desktop (Windows 11) num portátil Intel Core Ultra 7 256V (8 cores), 16 GB de RAM.
-Cluster standalone de `docker/docker-compose.yml`, imagem `spark:python3` (**Spark 4.2.0**, Scala 2.13, OpenJDK 21):
-1 master e **2 workers com 2 cores e 2 GB cada** (`./scripts/start_cluster.sh 2 2G 2`). O jar é compilado com JDK 17 e
+**Ambientes usados no relatório** (as mesmas corridas nas duas máquinas):
+* **Windows** (números principais, Figuras 2 e 3): Docker Desktop em Windows 11, portátil Intel Core Ultra 7 256V
+  (4 P-cores + 4 E-cores), 16 GB de RAM, NVMe SSD; imagem `spark:python3` com **Spark 4.2.0**.
+* **Linux** (coluna "Linux" da Tabela 2 e curvas "Linux" da Figura 4): Docker Engine sem VM em Fedora Linux 45,
+  portátil Intel Core Ultra 7 155H (6 P-cores + 8 E-cores + 2 LP-cores), 32 GB de RAM, NVMe SSD; **Spark 4.2.1**.
+  As métricas destas corridas estão no branch `TMP` (`output/metrics/`, `output/scaling/`, `SPECS_ANDRE.md`).
+
+Em ambas: cluster standalone de `docker/docker-compose.yml` (Scala 2.13, OpenJDK 21), 1 master e
+**2 workers com 2 cores e 2 GB cada**, cada contentor limitado a 2 CPUs (`./scripts/start_cluster.sh 2 2G 2`). O jar é compilado com JDK 17 e
 Kotlin 2.0.21. **Configuração não-default do Spark:** `spark.executor.memory=2g` (definida em `src/main/kotlin/compar/util/SparkUtils.kt`;
 o default é 1g). O mesmo ficheiro define `spark.driver.memory=2g`, que em client mode não tem efeito, e
 `spark.sql.adaptive.enabled=true`, que já é o default.

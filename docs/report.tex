@@ -112,7 +112,9 @@ the per-bucket statistics (right).}
 \texttt{spark:python3}: Spark 4.2.0, Scala 2.13, OpenJDK 21) in Docker Desktop on a laptop with an Intel Core Ultra 7 256V
 (4 performance + 4 efficiency cores), 16\,GB RAM, NVMe SSD and Windows 11. One master and two workers with 2 cores and 2\,GB each;
 the driver runs in the master container (client mode) and the jar, data and output are mounted from Windows. The only non-default
-setting is 2\,GB of executor memory (\texttt{spark.executor.memory}, default 1\,GB); AQE is on, as by default.
+setting is 2\,GB of executor memory (\texttt{spark.executor.memory}, default 1\,GB); AQE is on, as by default. We repeated
+every run on a second laptop running Linux with no virtual machine (``Linux'' in Table~\ref{tab:summary} and
+Figure~\ref{fig:scaling}; machine and full results in Appendix~\ref{sec:linux}).
 
 \textbf{Methodology.} \texttt{scripts/benchmark.sh} compiles the jar once and runs every version as a separate
 \texttt{spark-submit}, so no cache or JIT state carries over. Analytical operations run after M1~v3 and we count only their own
@@ -144,7 +146,7 @@ Total & \textbf{289.8} & & & & & \\
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=0.64\columnwidth]{figures/ui_o1_window_stage.png}
+\includegraphics[width=0.5\columnwidth]{figures/ui_o1_window_stage.png}
 \caption{Spark UI (History Server) of the window stage of O1~v0, from an extra run with the event log on: all 142.6\,M
 trips are shuffled (1.5\,GB) and almost every task spills, by similar amounts.}
 \label{fig:ui}
@@ -171,8 +173,8 @@ versions and Table~\ref{tab:summary} summarises all of them.
 
 \begin{figure*}[t]
 \centering
-\includegraphics[width=0.32\textwidth]{figures/evolution_time.pdf}\hspace{0.06\textwidth}
-\includegraphics[width=0.32\textwidth]{figures/evolution_memory.pdf}
+\includegraphics[width=0.29\textwidth]{figures/evolution_time.pdf}\hspace{0.06\textwidth}
+\includegraphics[width=0.29\textwidth]{figures/evolution_memory.pdf}
 \caption{Wall time (left) and peak execution memory (right, log scale) of every version, on the cluster with the 2015 data.
 Memory is the sum of the task peaks per stage, as Spark reports it; M1~v3 bypasses Spark's operators and reports none.}
 \label{fig:evolution}
@@ -211,8 +213,7 @@ map on the driver, packs (borough, day, hour) into 11 bits and aggregates once. 
 \subsection{M2 v5--v7: less work per row}
 \pa v4 evaluates a \texttt{CASE WHEN} chain and \texttt{unix\_timestamp} on every row. \pb Less work per row and fewer stages should
 help. \pc v5 uses an array lookup and divides once per group, v6 writes with \texttt{coalesce(1)}, v7 reads the CSV on the driver.
-\pd All stay within the range of the runs (21.1--21.9\,s): the removed stages were cheap and \texttt{coalesce(1)} puts
-the last step in one task. M2 is bound by its scan and no version moves its time, so we keep v4, which needs the least memory.
+\pd All stay within the range of the runs (21.1--21.9\,s): the removed stages were cheap. M2 is bound by its scan and no version moves its time, so we keep v4, which needs the least memory.
 
 \subsection{M3 v1: cache the result}
 \pa \texttt{show()}, the count of flagged rows and the write each read and aggregate the trips again. \pb If the small final table
@@ -239,56 +240,57 @@ should move less data. \pc v1 uses one \texttt{select}, v2 adds \texttt{broadcas
 Catalyst was already doing both, and the 6--9\,\% gain is about the spread of the runs of v0.
 
 \begin{table*}[t]
-\centering\scriptsize\setlength{\tabcolsep}{4pt}
-\caption{Summary of all optimisations on the cluster (2015 data, median and range of three runs; memory is the peak execution memory; CPU times quoted in the text are in the notebook).
-The best versions (M1~v3, M2~v4, M3~v3, O1~v6, O4~v6) take 103.2\,s together instead of 289.8\,s for v0 (2.81$\times$).}
+\centering\scriptsize\setlength{\tabcolsep}{3pt}
+\caption{Summary of all optimisations (2015 data, median and range of three runs; mem: peak execution memory; CPU times
+quoted in the text are in the notebook; Linux: median on the second machine). The best versions (M1~v3, M2~v4, M3~v3, O1~v6, O4~v6)
+take 103.2\,s instead of 289.8\,s for v0 (2.81$\times$), and 135.3\,s instead of 390.7\,s on Linux (2.89$\times$).}
 \label{tab:summary}
-\begin{tabular}[t]{@{}llrrrr@{}}
+\begin{tabular}[t]{@{}llrrrrr@{}}
 \toprule
-Op & version & wall (s) & range (s) & vs v0 & mem (MB) \\
+Op & version & wall (s) & range (s) & vs v0 & mem (MB) & Linux (s) \\
 \midrule
-M1 & v0 baseline & 40.9 & 37.1--42.9 & 1.00 & 32 \\
- & v1 one scan & 19.1 & 18.6--21.0 & 2.14 & 32 \\
- & v2 bitmask & 18.6 & 18.4--18.6 & 2.20 & 32 \\
- & v3 columnar reader & 12.9 & 12.7--13.8 & 3.17 & 0 \\
+M1 & v0 baseline & 40.9 & 37.1--42.9 & 1.00 & 32 & 49.3 \\
+ & v1 one scan & 19.1 & 18.6--21.0 & 2.14 & 32 & 22.9 \\
+ & v2 bitmask & 18.6 & 18.4--18.6 & 2.20 & 32 & 20.8 \\
+ & v3 columnar reader & 12.9 & 12.7--13.8 & 3.17 & 0 & 16.3 \\
 \midrule
-M2 & v0 baseline & 21.6 & 20.9--22.3 & 1.00 & 1{,}412 \\
- & v1 projection, broadcast & 21.6 & 20.9--22.1 & 1.00 & 1{,}412 \\
- & v2 no global sort & 22.9 & 22.5--22.9 & 0.94 & 1{,}412 \\
- & v3 aggregate first & 22.1 & 21.5--22.1 & 0.98 & 515 \\
- & v4 no join & 21.7 & 20.4--21.8 & 1.00 & 32 \\
- & v5 array lookup & 21.6 & 21.3--22.4 & 1.00 & 32 \\
- & v6 coalesce(1) & 21.1 & 20.3--21.5 & 1.02 & 64 \\
- & v7 CSV on driver & 21.9 & 20.7--22.3 & 0.99 & 64 \\
+M2 & v0 baseline & 21.6 & 20.9--22.3 & 1.00 & 1{,}412 & 30.3 \\
+ & v1 projection, broadcast & 21.6 & 20.9--22.1 & 1.00 & 1{,}412 & 29.3 \\
+ & v2 no global sort & 22.9 & 22.5--22.9 & 0.94 & 1{,}412 & 28.7 \\
+ & v3 aggregate first & 22.1 & 21.5--22.1 & 0.98 & 515 & 29.4 \\
+ & v4 no join & 21.7 & 20.4--21.8 & 1.00 & 32 & 27.9 \\
+ & v5 array lookup & 21.6 & 21.3--22.4 & 1.00 & 32 & 28.6 \\
+ & v6 coalesce(1) & 21.1 & 20.3--21.5 & 1.02 & 64 & 29.9 \\
+ & v7 CSV on driver & 21.9 & 20.7--22.3 & 0.99 & 64 & 28.6 \\
 \midrule
-M3 & v0 baseline & 90.9 & 85.5--92.4 & 1.00 & 1{,}028 \\
- & v1 cache result & 59.2 & 57.4--60.8 & 1.54 & 6{,}412 \\
- & v2 integer keys & 43.9 & 43.0--44.9 & 2.07 & 6{,}412 \\
- & v3 windows on driver & 18.2 & 17.4--18.3 & 4.99 & 32 \\
+M3 & v0 baseline & 90.9 & 85.5--92.4 & 1.00 & 1{,}028 & 133.2 \\
+ & v1 cache result & 59.2 & 57.4--60.8 & 1.54 & 6{,}412 & 65.8 \\
+ & v2 integer keys & 43.9 & 43.0--44.9 & 2.07 & 6{,}412 & 40.3 \\
+ & v3 windows on driver & 18.2 & 17.4--18.3 & 4.99 & 32 & 23.4 \\
 \bottomrule
 \end{tabular}\hfill
-\begin{tabular}[t]{@{}llrrrr@{}}
+\begin{tabular}[t]{@{}llrrrrr@{}}
 \toprule
-Op & version & wall (s) & range (s) & vs v0 & mem (MB) \\
+Op & version & wall (s) & range (s) & vs v0 & mem (MB) & Linux (s) \\
 \midrule
-O1 & v0 baseline & 68.8 & 64.6--71.8 & 1.00 & 13{,}703 \\
- & v1 projection & 63.1 & 61.8--64.6 & 1.09 & 13{,}703 \\
- & v2 + broadcast & 64.8 & 63.0--66.5 & 1.06 & 13{,}703 \\
- & v3 aggregation, no window & 39.3 & 38.4--40.2 & 1.75 & 1{,}544 \\
- & v4 integer keys & 36.9 & 35.4--39.0 & 1.86 & 1{,}029 \\
- & v5 array, no join & 31.4 & 31.2--31.4 & 2.19 & 64 \\
- & v6 integer counters & 30.9 & 30.4--31.8 & 2.23 & 64 \\
- & v7 per-mile compare & 31.1 & 30.9--31.7 & 2.21 & 64 \\
+O1 & v0 baseline & 68.8 & 64.6--71.8 & 1.00 & 13{,}703 & 89.9 \\
+ & v1 projection & 63.1 & 61.8--64.6 & 1.09 & 13{,}703 & 86.1 \\
+ & v2 + broadcast & 64.8 & 63.0--66.5 & 1.06 & 13{,}703 & 86.1 \\
+ & v3 aggregation, no window & 39.3 & 38.4--40.2 & 1.75 & 1{,}544 & 58.4 \\
+ & v4 integer keys & 36.9 & 35.4--39.0 & 1.86 & 1{,}029 & 48.5 \\
+ & v5 array, no join & 31.4 & 31.2--31.4 & 2.19 & 64 & 42.8 \\
+ & v6 integer counters & 30.9 & 30.4--31.8 & 2.23 & 64 & 41.6 \\
+ & v7 per-mile compare & 31.1 & 30.9--31.7 & 2.21 & 64 & 41.9 \\
 \midrule
-O4 & v0 baseline & 67.6 & 62.9--67.8 & 1.00 & 1{,}040 \\
- & v1 projection & 64.4 & 63.0--68.4 & 1.05 & 520 \\
- & v2 broadcast classes & 47.4 & 47.2--49.8 & 1.43 & 520 \\
- & v3 integer keys & 35.7 & 34.1--38.4 & 1.89 & 1{,}029 \\
- & v4 array, no join & 33.0 & 32.0--33.2 & 2.05 & 32 \\
- & v5 one scan & 27.7 & 27.1--28.6 & 2.44 & 6{,}450 \\
- & v6 finish on driver & 19.5 & 19.4--19.6 & 3.47 & 99 \\
+O4 & v0 baseline & 67.6 & 62.9--67.8 & 1.00 & 1{,}040 & 88.0 \\
+ & v1 projection & 64.4 & 63.0--68.4 & 1.05 & 520 & 87.0 \\
+ & v2 broadcast classes & 47.4 & 47.2--49.8 & 1.43 & 520 & 68.9 \\
+ & v3 integer keys & 35.7 & 34.1--38.4 & 1.89 & 1{,}029 & 45.2 \\
+ & v4 array, no join & 33.0 & 32.0--33.2 & 2.05 & 32 & 42.2 \\
+ & v5 one scan & 27.7 & 27.1--28.6 & 2.44 & 6{,}450 & 38.3 \\
+ & v6 finish on driver & 19.5 & 19.4--19.6 & 3.47 & 99 & 26.1 \\
 \midrule
-All & best versions & 103.2 & & 2.81 & \\
+All & best versions & 103.2 & & 2.81 & & 135.3 \\
 \bottomrule
 \end{tabular}
 \end{table*}
@@ -341,54 +343,53 @@ and integer counters should be cheaper. \pc v4 uses integer sums and an 8\,KB ar
 In Table~\ref{tab:summary}, the largest gains
 come from removing work: extra scans, shuffles of whole rows and stages for a few thousand rows (M1~v1, M3~v3, O1~v3, O4~v2,
 O4~v6). Memory falls when a join or hash table goes away (M2~v4, O1~v5, O4~v4), while caching a small result in 200 partitions
-shows up as a memory peak even when it saves time (M3~v1, O4~v5). What Catalyst already did on its own (projections and broadcasts
-of the zone table) gave nothing.
+shows up as a memory peak even when it saves time (M3~v1, O4~v5). 
 
 % ============================================================================
 \section{Analysis}
-We ran the optimised pipeline (the best versions, but M1~v2, chosen before the repeated runs showed v3 to be faster) with \texttt{scripts/cluster\_bench/scaling\_2015.sh}, which runs the same benchmark three times per condition (Figure~\ref{fig:scaling}).
+We ran the optimised pipeline (the best versions, but M1~v2, chosen before the repeated runs) with \texttt{scaling\_2015.sh}, three runs per condition (Figure~\ref{fig:scaling}).
 
 \begin{figure}[t]
 \centering
 \begin{tikzpicture}
-\begin{axis}[width=0.54\columnwidth,height=3.6cm,xlabel={\% of the data},ylabel={pipeline time (s)},
+\begin{axis}[width=0.54\columnwidth,height=3.3cm,xlabel={\% of the data},ylabel={pipeline time (s)},
   xmin=0,xmax=1.1,ymin=0,ymax=125,xtick={0.1,0.2,0.5,1},xticklabels={10,20,50,100},
   label style={font=\scriptsize},tick label style={font=\scriptsize},
   legend style={font=\tiny,at={(0.98,0.03)},anchor=south east,draw=none,fill=white}]
 \addplot[mark=*,thick,blue,error bars/.cd,y dir=both,y explicit] coordinates {(0.1,75.2) += (0,1.5) -= (0,0.7) (0.2,80.5) += (0,0.3) -= (0,1.0) (1,96.6) += (0,7.1) -= (0,0.6)};
 \addplot[dashed,gray,domain=0:1.1] {96.6*x};
-\legend{measured,linear from 100\,\%}
+\addplot[mark=triangle*,thick,red!70!black,error bars/.cd,y dir=both,y explicit] coordinates {(0.1,79.0) += (0,4.6) -= (0,1.2) (0.2,83.1) += (0,2.5) -= (0,0.6) (1,111.2) += (0,2.9) -= (0,0.0)};
+\legend{Windows,linear,Linux}
 \end{axis}
 \end{tikzpicture}\hfill
 \begin{tikzpicture}
-\begin{axis}[width=0.54\columnwidth,height=3.6cm,xlabel={workers (2 cores each)},ylabel={speedup vs.\ 1 worker},
-  xmin=0.5,xmax=3.5,ymin=0,ymax=3.3,xtick={1,2,3},label style={font=\scriptsize},tick label style={font=\scriptsize},
+\begin{axis}[width=0.54\columnwidth,height=3.3cm,xlabel={workers (2 cores each)},ylabel={speedup vs.\ 1 worker},
+  xmin=0.5,xmax=3.5,ymin=0,ymax=4.2,ytick={0,1,2,3},xtick={1,2,3},label style={font=\scriptsize},tick label style={font=\scriptsize},
   legend style={font=\tiny,at={(0.02,0.98)},anchor=north west,draw=none,fill=none}]
-\addplot[dashed,gray,domain=1:3,samples=3] {x};
+\addplot[dashed,gray,domain=1:3,samples=3,forget plot] {x};
+\node[font=\tiny,gray,anchor=south east] at (axis cs:3,3) {ideal};
 \addplot[mark=square*,thick,orange] coordinates {(1,1) (2,1.18) (3,0.98)};
-\legend{ideal,measured}
+\addplot[mark=triangle*,thick,red!70!black] coordinates {(1,1) (2,1.78) (3,2.24)};
+\legend{Windows,Linux}
 \end{axis}
 \end{tikzpicture}
-\caption{Optimised pipeline, median of 3 runs (bars: range). Left: time vs.\ data fraction (2 workers). Right: speedup vs.\ workers (full data).}
+\caption{Optimised pipeline on both machines, median of 3 runs (bars: range). Left: time vs.\ data fraction (2 workers). Right: speedup vs.\ workers (full data).}
 \label{fig:scaling}
 \end{figure}
 
-\textbf{Dataset scale.} The time grows much less than the data. With 10\,\% of the trips the pipeline takes 75.2\,s, 78\,\% of the 96.6\,s of the full data, and with 20\,\% it takes 83\,\%. A straight line through the three points gives about 73\,s that do not depend on the fraction and 24\,s that do. Two things make the fixed part so large. Scheduling the jobs and stages, reading the zone table and the work on the driver cost the same for any input. And \texttt{-{}-sample} draws the rows \emph{after} reading, so every Parquet file is still opened, read through the mount and decoded; only the work after the scan shrinks. That is why O4, which still aggregates every trip, drops by 31\,\%, while M1, which is almost only the read, drops by 18\,\%.
+\textbf{Dataset scale.} The time grows much less than the data. With 10\,\% of the trips the pipeline takes 75.2\,s, 78\,\% of the 96.6\,s of the full data, and with 20\,\% it takes 83\,\% (Linux: 71 and 75\,\% of 111.2\,s). A straight line through the three points gives about 73\,s that do not depend on the fraction and 24\,s that do. Two things make the fixed part so large: scheduling the jobs and stages, reading the zone table and the work on the driver cost the same for any input, and \texttt{-{}-sample} draws the rows \emph{after} reading, so every Parquet file is still opened, read through the mount and decoded; only the work after the scan shrinks. That is why O4, which still aggregates every trip, drops by 31\,\%, while M1, which is almost only the read, drops by 18\,\%.
 
-\textbf{Cluster size.} With 2 workers the pipeline is 1.18$\times$ faster than with one (efficiency 59\,\%), and with 3 it is no faster than with one (0.98$\times$, efficiency 33\,\%), with the widest spread between runs. The deviation from the ideal line has three causes. The fixed cost on the driver and in scheduling does not shrink with more executors. The scans have one task per file (13 tasks), so with 4 or 6 cores the last wave is almost empty. Most important, all workers are containers on the same laptop and share its 8 cores (half of them efficiency cores), its memory bandwidth and the mount through which every file is read. The executor CPU time for the same work grows from 157 to 224 and 309\,s with 1, 2 and 3 workers: the extra executors mostly compete for the same hardware.
+\textbf{Cluster size.} On Windows, 2 workers make the pipeline 1.18$\times$ faster than one (efficiency 59\,\%) and 3 workers no faster (0.98$\times$, 33\,\%); on Linux the same runs reach 1.78$\times$ and 2.24$\times$ (89 and 75\,\%). Three causes explain the deviation from the ideal line. The fixed cost on the driver and in scheduling does not shrink with more executors: fitting $t = a + b/w$ to the Linux times gives $a \approx 34$\,s, 17\,\% of the time with one worker. The scans have one task per file (13 tasks), so with 4 or 6 cores the last wave is almost empty. Above all on Windows, the workers are containers in one virtual machine with 8 cores (half of them efficiency cores) and read every file through the same mount: the executor CPU time for the same work grows from 157 to 224 and 309\,s with 1, 2 and 3 workers, against 12\,\% more on Linux, where the 16 cores are not shared.
 
 
 % ============================================================================
 \section{Discussion}
-\textbf{What is left.} Each operation now costs roughly the scans it needs: one pass for M1, M2, M3 and O4, two for O1. On the
-cluster the next limit is reading the files through the mount. Every operation reads the same files again; materialising the cleaned data
+\textbf{What is left.} Each operation now costs roughly the scans it needs: one pass for M1, M2, M3 and O4, two for O1.  Every operation reads the same files again; materialising the cleaned data
 once (a large enough cache or a narrower Parquet file) would avoid this.
 
 \textbf{Limitations.} Three runs per version separate real changes from noise only above about 10\,\%, so for M2, O1~v1/v2 and O1~v6/v7
-we rely on the plan metrics. Peak memory is the sum of task peaks per stage, too high for stages with many tasks (M3~v1, O4~v5), and
-on the cluster Spark does not report Parquet input bytes, so we reason
-about scans from the plans. The baseline total sums separate runs per operation.
-\textbf{With more time} we would run more repetitions on the DI cluster.
+we rely on the plan metrics. Peak memory sums the task peaks per stage, too high for stages with many tasks (M3~v1, O4~v5), and Spark does not
+report Parquet input bytes on the cluster, so we infer scans from the plans. The baseline total sums separate runs per operation. \textbf{With more time} we would run more repetitions on the DI cluster.
 
 
 % ============================================================================
@@ -415,5 +416,107 @@ sharing one laptop.
 
 \bibliographystyle{acm}
 \bibliography{refs}
+
+\clearpage
+\appendix
+\section{Measurements on the Linux machine}\label{sec:linux}
+The same benchmark (\texttt{benchmark.sh -{}-all -{}-runs 3} and \texttt{scaling\_2015.sh}) on the second laptop of
+Section~3: Intel Core Ultra 7 155H (6 performance + 8 efficiency + 2 low-power cores), 32\,GB RAM, NVMe SSD, Fedora Linux 45
+with Docker Engine and no virtual machine, Spark 4.2.1, and the same cluster (two workers with 2 cores and 2\,GB, client mode).
+Stages, tasks, shuffle, spill and memory match the Windows machine, because they depend on the data and the plan; only the
+times differ. The metrics are in the branch \texttt{TMP} of the repository.
+
+\begin{table}[h]
+\centering\footnotesize\setlength{\tabcolsep}{3pt}
+\caption{Linux machine: baseline (every operation at v0), median of three runs; same columns as Table~\ref{tab:baseline}.}
+\label{tab:linux-baseline}
+\begin{tabular}{lrrrrrl}
+\toprule
+Op & wall & stages & tasks & shuffle & spill & heaviest stage \\
+   & (s)  &        &       & R / W (MB) & (MB)  & (task time) \\
+\midrule
+M1 & 49.3 & 15 & 135 & 0 / 0 & 0 & scan, 80\,s (2 such) \\
+M2 & 30.3 & 11 & 71 & 1.4 / 0.7 & 0 & scan, 88\,s \\
+M3 & 133.2 & 44 & 254 & 2.5 / 2.3 & 0 & scan, 162\,s (3 such) \\
+O1 & 89.9 & 16 & 195 & 1{,}515 / 1{,}515 & 1{,}319 & window, 202\,s \\
+O4 & 88.0 & 18 & 247 & 1{,}799 / 1{,}799 & 0 & shuffle write, 173\,s \\
+\midrule
+Total & \textbf{390.7} & & & & & \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[h]
+\centering\footnotesize\setlength{\tabcolsep}{4pt}
+\caption{Linux machine: optimised pipeline (Section~5), median and range of three runs; CPU is the executor CPU time.}
+\label{tab:linux-scaling}
+\begin{tabular}{rrrrrrr}
+\toprule
+workers & data & time (s) & range (s) & speedup & efficiency & CPU (s) \\
+\midrule
+1 & 100\,\% & 197.7 & 188.4--199.1 & 1.00 & 100\,\% & 309 \\
+2 & 100\,\% & 111.2 & 111.2--114.1 & 1.78 & 89\,\% & 323 \\
+3 & 100\,\% & 88.3 & 87.4--90.5 & 2.24 & 75\,\% & 345 \\
+2 & 20\,\% & 83.1 & 82.5--85.6 &  &  & 222 \\
+2 & 10\,\% & 79.0 & 77.8--83.6 &  &  & 203 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table*}[h]
+\centering\scriptsize\setlength{\tabcolsep}{4pt}
+\caption{Linux machine: all optimisations, median and range of three runs; CPU is the executor CPU time and mem the peak
+execution memory. The best versions take 135.3\,s instead of 390.7\,s for v0 (2.89$\times$).}
+\label{tab:linux-summary}
+\begin{tabular}[t]{@{}llrrrrr@{}}
+\toprule
+Op & version & wall (s) & range (s) & vs v0 & CPU (s) & mem (MB) \\
+\midrule
+M1 & v0 baseline & 49.3 & 46.9--49.8 & 1.00 & 127.2 & 32 \\
+ & v1 one scan & 22.9 & 22.6--23.1 & 2.15 & 52.2 & 32 \\
+ & v2 bitmask & 20.8 & 20.4--21.4 & 2.37 & 45.4 & 32 \\
+ & v3 columnar reader & 16.3 & 15.5--16.4 & 3.02 & 37.5 & 0 \\
+\midrule
+M2 & v0 baseline & 30.3 & 29.1--31.9 & 1.00 & 75.0 & 1{,}412 \\
+ & v1 projection, broadcast & 29.3 & 29.2--31.0 & 1.03 & 74.2 & 1{,}412 \\
+ & v2 no global sort & 28.7 & 28.5--30.3 & 1.06 & 75.4 & 1{,}412 \\
+ & v3 aggregate first & 29.4 & 28.9--29.4 & 1.03 & 77.3 & 515 \\
+ & v4 no join & 27.9 & 27.6--28.0 & 1.09 & 73.3 & 32 \\
+ & v5 array lookup & 28.6 & 28.4--31.8 & 1.06 & 75.1 & 32 \\
+ & v6 coalesce(1) & 29.9 & 29.8--30.5 & 1.01 & 74.2 & 64 \\
+ & v7 CSV on driver & 28.6 & 28.3--29.9 & 1.06 & 76.1 & 64 \\
+\midrule
+M3 & v0 baseline & 133.2 & 127.9--135.9 & 1.00 & 354.2 & 1{,}028 \\
+ & v1 cache result & 65.8 & 63.1--67.6 & 2.02 & 131.3 & 6{,}412 \\
+ & v2 integer keys & 40.3 & 40.3--40.8 & 3.31 & 66.1 & 6{,}412 \\
+ & v3 windows on driver & 23.4 & 23.2--23.8 & 5.69 & 57.7 & 32 \\
+\bottomrule
+\end{tabular}\hfill
+\begin{tabular}[t]{@{}llrrrrr@{}}
+\toprule
+Op & version & wall (s) & range (s) & vs v0 & CPU (s) & mem (MB) \\
+\midrule
+O1 & v0 baseline & 89.9 & 88.4--91.2 & 1.00 & 270.9 & 13{,}703 \\
+ & v1 projection & 86.1 & 85.2--87.5 & 1.04 & 265.8 & 13{,}703 \\
+ & v2 + broadcast & 86.1 & 85.5--86.6 & 1.04 & 266.6 & 13{,}703 \\
+ & v3 aggregation, no window & 58.4 & 54.6--60.9 & 1.54 & 164.5 & 1{,}544 \\
+ & v4 integer keys & 48.5 & 46.5--49.5 & 1.85 & 134.1 & 1{,}029 \\
+ & v5 array, no join & 42.8 & 40.4--44.0 & 2.10 & 113.8 & 64 \\
+ & v6 integer counters & 41.6 & 39.5--43.1 & 2.16 & 113.8 & 64 \\
+ & v7 per-mile compare & 41.9 & 40.6--44.1 & 2.15 & 111.3 & 64 \\
+\midrule
+O4 & v0 baseline & 88.0 & 87.7--89.6 & 1.00 & 281.5 & 1{,}040 \\
+ & v1 projection & 87.0 & 86.7--87.7 & 1.01 & 275.7 & 520 \\
+ & v2 broadcast classes & 68.9 & 65.7--69.3 & 1.28 & 188.7 & 520 \\
+ & v3 integer keys & 45.2 & 44.9--48.2 & 1.95 & 127.4 & 1{,}029 \\
+ & v4 array, no join & 42.2 & 41.8--45.8 & 2.09 & 116.2 & 32 \\
+ & v5 one scan & 38.3 & 38.2--39.7 & 2.30 & 83.3 & 6{,}450 \\
+ & v6 finish on driver & 26.1 & 26.0--26.5 & 3.37 & 68.8 & 99 \\
+\midrule
+All & best versions & 135.3 & & 2.89 & & \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
 
 \end{document}
