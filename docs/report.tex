@@ -65,7 +65,7 @@ line, so each change is measured on its own against the baseline. M1 returns the
 read from it; we do not cache it, since 142\,M rows do not fit in 2\,GB executors and each operation reads only its own columns.
 Every operation writes its result as Parquet (M1 writes its per-year cleaning statistics as CSV).
 
-Figure~\ref{fig:plan} shows the physical plan of O1 (from \texttt{explain} in extended mode) before and after its key change.
+Figure~\ref{fig:plan} shows the physical plan of O1 (from Spark's event log) before and after its key change.
 
 \begin{figure}[t]
 \centering\tiny
@@ -373,7 +373,7 @@ We ran the optimised pipeline (the best versions, but M1~v2, chosen before the r
 \legend{Windows,Linux}
 \end{axis}
 \end{tikzpicture}
-\caption{Optimised pipeline on both machines, median of 3 runs (bars: range). Left: time vs.\ data fraction (2 workers). Right: speedup vs.\ workers (full data).}
+\caption{Optimised pipeline, median of 3 runs (2 for Windows with 3 workers; bars: range). Left: time vs.\ data fraction (2 workers). Right: speedup (full data).}
 \label{fig:scaling}
 \end{figure}
 
@@ -424,7 +424,7 @@ The same benchmark (\texttt{benchmark.sh -{}-all -{}-runs 3} and \texttt{scaling
 Section~3: Intel Core Ultra 7 155H (6 performance + 8 efficiency + 2 low-power cores), 32\,GB RAM, NVMe SSD, Fedora Linux 45
 with Docker Engine and no virtual machine, Spark 4.2.1, and the same cluster (two workers with 2 cores and 2\,GB, client mode).
 Stages, tasks, shuffle, spill and memory match the Windows machine, because they depend on the data and the plan; only the
-times differ. The metrics are in the branch \texttt{TMP} of the repository.
+times differ. 
 
 \begin{table}[h]
 \centering\footnotesize\setlength{\tabcolsep}{3pt}

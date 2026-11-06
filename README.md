@@ -130,7 +130,7 @@ Para visualizar os gráficos e tabelas consolidadas de desempenho, abre o notebo
   (4 P-cores + 4 E-cores), 16 GB de RAM, NVMe SSD; imagem `spark:python3` com **Spark 4.2.0**.
 * **Linux** (coluna "Linux" da Tabela 2 e curvas "Linux" da Figura 4): Docker Engine sem VM em Fedora Linux 45,
   portátil Intel Core Ultra 7 155H (6 P-cores + 8 E-cores + 2 LP-cores), 32 GB de RAM, NVMe SSD; **Spark 4.2.1**.
-  As métricas destas corridas estão no branch `TMP` (`output/metrics/`, `output/scaling/`, `SPECS_ANDRE.md`).
+  
 
 Em ambas: cluster standalone de `docker/docker-compose.yml` (Scala 2.13, OpenJDK 21), 1 master e
 **2 workers com 2 cores e 2 GB cada**, cada contentor limitado a 2 CPUs (`./scripts/start_cluster.sh 2 2G 2`). O jar é compilado com JDK 17 e
