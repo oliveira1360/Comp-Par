@@ -13,11 +13,17 @@ mkdir -p output/scaling
 
 run() {  # run <condition> [extra benchmark.sh args...]
     local cond="$1"; shift
+    if [ -d "output/scaling/$cond" ] && [ -n "$(ls -A "output/scaling/$cond" 2>/dev/null)" ]; then
+        echo "=== $(date +%H:%M:%S) condition $cond already completed, skipping ==="
+        return 0
+    fi
     echo "=== $(date +%H:%M:%S) condition $cond ==="
-    rm -rf output/metrics/all
+    docker exec -u root spark-master rm -rf /output/metrics/all 2>/dev/null || rm -rf output/metrics/all 2>/dev/null || true
     bash scripts/benchmark.sh "${BEST[@]}" "$@"
+    docker exec -u root spark-master chmod -R 777 /output 2>/dev/null || true
     rm -rf "output/scaling/$cond"
-    mv output/metrics/all "output/scaling/$cond"
+    cp -r output/metrics/all "output/scaling/$cond"
+    docker exec -u root spark-master rm -rf /output/metrics/all 2>/dev/null || rm -rf output/metrics/all 2>/dev/null || true
 }
 
 bash scripts/start_cluster.sh 2
