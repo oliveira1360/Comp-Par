@@ -23,11 +23,8 @@
 \subtitle{ComPar 2026/27 -- Project 1}
 
 
-\author{Diogo Oliveira}
-\email{77474}
-
-\author{Andr\'e Nunes}
-\email{77077}
+\author{Diogo Oliveira (77474)}
+\author{Andr\'e Nunes (77077)}
 
 
 \begin{abstract}
@@ -114,7 +111,7 @@ the per-bucket statistics (right).}
 the driver runs in the master container (client mode) and the jar, data and output are mounted from Windows. The only non-default
 setting is 2\,GB of executor memory (\texttt{spark.executor.memory}, default 1\,GB); AQE is on, as by default. We repeated
 every run on a second laptop running Linux with no virtual machine (``Linux'' in Table~\ref{tab:summary} and
-Figure~\ref{fig:scaling}; machine and full results in Appendix~\ref{sec:linux}).
+Figure~\ref{fig:scaling}; machine, baseline and scaling in Appendix~\ref{sec:linux}).
 
 \textbf{Methodology.} \texttt{scripts/benchmark.sh} compiles the jar once and runs every version as a separate
 \texttt{spark-submit}, so no cache or JIT state carries over. Analytical operations run after M1~v3 and we count only their own
@@ -146,7 +143,7 @@ Total & \textbf{289.8} & & & & & \\
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=0.5\columnwidth]{figures/ui_o1_window_stage.png}
+\includegraphics[width=0.7\columnwidth]{figures/ui_o1_window_stage.png}
 \caption{Spark UI (History Server) of the window stage of O1~v0, from an extra run with the event log on: all 142.6\,M
 trips are shuffled (1.5\,GB) and almost every task spills, by similar amounts.}
 \label{fig:ui}
@@ -173,8 +170,8 @@ versions and Table~\ref{tab:summary} summarises all of them.
 
 \begin{figure*}[t]
 \centering
-\includegraphics[width=0.29\textwidth]{figures/evolution_time.pdf}\hspace{0.06\textwidth}
-\includegraphics[width=0.29\textwidth]{figures/evolution_memory.pdf}
+\makebox[\columnwidth]{\includegraphics[width=0.29\textwidth]{figures/evolution_time.pdf}}\hfill
+\makebox[\columnwidth]{\includegraphics[width=0.29\textwidth]{figures/evolution_memory.pdf}}
 \caption{Wall time (left) and peak execution memory (right, log scale) of every version, on the cluster with the 2015 data.
 Memory is the sum of the task peaks per stage, as Spark reports it; M1~v3 bypasses Spark's operators and reports none.}
 \label{fig:evolution}
@@ -396,7 +393,8 @@ report Parquet input bytes on the cluster, so we infer scans from the plans. The
 \clearpage
 \begin{acks}
 We used two AI tools during the project, Claude Code (Anthropic) and Antigravity (Google), mostly to help with
-research, with the code and with writing this report. We ran and checked all the measurements ourselves.
+research, with the code and with writing this report. Both followed an instruction file we wrote
+(\texttt{agent.md}) with the project's rules and conventions. We ran and checked all the measurements ourselves.
 \end{acks}
 
 \section*{Individual contributions}
@@ -417,18 +415,15 @@ sharing one laptop.
 \bibliographystyle{acm}
 \bibliography{refs}
 
-\clearpage
 \appendix
 \section{Measurements on the Linux machine}\label{sec:linux}
-The same benchmark (\texttt{benchmark.sh -{}-all -{}-runs 3} and \texttt{scaling\_2015.sh}) on the second laptop of
-Section~3: Intel Core Ultra 7 155H (6 performance + 8 efficiency + 2 low-power cores), 32\,GB RAM, NVMe SSD, Fedora Linux 45
-with Docker Engine and no virtual machine, Spark 4.2.1, and the same cluster (two workers with 2 cores and 2\,GB, client mode).
-Stages, tasks, shuffle, spill and memory match the Windows machine, because they depend on the data and the plan; only the
-times differ. 
+Same benchmark and cluster as in Section~3, on a laptop with an Intel Core Ultra 7 155H (6 performance + 8 efficiency
++ 2 low-power cores), 32\,GB RAM, NVMe SSD, Fedora Linux 45, Docker Engine (no virtual machine) and Spark 4.2.1. Stages, tasks,
+shuffle, spill and memory match the Windows machine; only the times differ. Table~\ref{tab:linux-summary} gives every version. 
 
-\begin{table}[h]
+\par\medskip\noindent\begin{minipage}{\columnwidth}
 \centering\footnotesize\setlength{\tabcolsep}{3pt}
-\caption{Linux machine: baseline (every operation at v0), median of three runs; same columns as Table~\ref{tab:baseline}.}
+\captionof{table}{Linux machine: baseline (every operation at v0), median of three runs; same columns as Table~\ref{tab:baseline}.}
 \label{tab:linux-baseline}
 \begin{tabular}{lrrrrrl}
 \toprule
@@ -444,11 +439,11 @@ O4 & 88.0 & 18 & 247 & 1{,}799 / 1{,}799 & 0 & shuffle write, 173\,s \\
 Total & \textbf{390.7} & & & & & \\
 \bottomrule
 \end{tabular}
-\end{table}
+\end{minipage}
 
-\begin{table}[h]
+\par\medskip\noindent\begin{minipage}{\columnwidth}
 \centering\footnotesize\setlength{\tabcolsep}{4pt}
-\caption{Linux machine: optimised pipeline (Section~5), median and range of three runs; CPU is the executor CPU time.}
+\captionof{table}{Linux machine: optimised pipeline (Section~5), median and range of three runs; CPU is the executor CPU time.}
 \label{tab:linux-scaling}
 \begin{tabular}{rrrrrrr}
 \toprule
@@ -461,62 +456,63 @@ workers & data & time (s) & range (s) & speedup & efficiency & CPU (s) \\
 2 & 10\,\% & 79.0 & 77.8--83.6 &  &  & 203 \\
 \bottomrule
 \end{tabular}
-\end{table}
-
-\begin{table*}[h]
-\centering\scriptsize\setlength{\tabcolsep}{4pt}
-\caption{Linux machine: all optimisations, median and range of three runs; CPU is the executor CPU time and mem the peak
-execution memory. The best versions take 135.3\,s instead of 390.7\,s for v0 (2.89$\times$).}
+\end{minipage}
+\par\medskip\noindent\begin{minipage}{\columnwidth}
+\centering\scriptsize\setlength{\tabcolsep}{3pt}
+\captionof{table}{Linux machine: every version, median and range of three runs; CPU is the executor CPU time.
+Peak memory is the same as in Table~\ref{tab:summary}.}
 \label{tab:linux-summary}
-\begin{tabular}[t]{@{}llrrrrr@{}}
+\begin{tabular}{@{}llrrrr@{}}
 \toprule
-Op & version & wall (s) & range (s) & vs v0 & CPU (s) & mem (MB) \\
+Op & version & wall (s) & range (s) & vs v0 & CPU (s) \\
 \midrule
-M1 & v0 baseline & 49.3 & 46.9--49.8 & 1.00 & 127.2 & 32 \\
- & v1 one scan & 22.9 & 22.6--23.1 & 2.15 & 52.2 & 32 \\
- & v2 bitmask & 20.8 & 20.4--21.4 & 2.37 & 45.4 & 32 \\
- & v3 columnar reader & 16.3 & 15.5--16.4 & 3.02 & 37.5 & 0 \\
+M1 & v0 baseline & 49.3 & 46.9--49.8 & 1.00 & 127.2 \\
+ & v1 one scan & 22.9 & 22.6--23.1 & 2.15 & 52.2 \\
+ & v2 bitmask & 20.8 & 20.4--21.4 & 2.37 & 45.4 \\
+ & v3 columnar reader & 16.3 & 15.5--16.4 & 3.02 & 37.5 \\
 \midrule
-M2 & v0 baseline & 30.3 & 29.1--31.9 & 1.00 & 75.0 & 1{,}412 \\
- & v1 projection, broadcast & 29.3 & 29.2--31.0 & 1.03 & 74.2 & 1{,}412 \\
- & v2 no global sort & 28.7 & 28.5--30.3 & 1.06 & 75.4 & 1{,}412 \\
- & v3 aggregate first & 29.4 & 28.9--29.4 & 1.03 & 77.3 & 515 \\
- & v4 no join & 27.9 & 27.6--28.0 & 1.09 & 73.3 & 32 \\
- & v5 array lookup & 28.6 & 28.4--31.8 & 1.06 & 75.1 & 32 \\
- & v6 coalesce(1) & 29.9 & 29.8--30.5 & 1.01 & 74.2 & 64 \\
- & v7 CSV on driver & 28.6 & 28.3--29.9 & 1.06 & 76.1 & 64 \\
+M2 & v0 baseline & 30.3 & 29.1--31.9 & 1.00 & 75.0 \\
+ & v1 projection, broadcast & 29.3 & 29.2--31.0 & 1.03 & 74.2 \\
+ & v2 no global sort & 28.7 & 28.5--30.3 & 1.06 & 75.4 \\
+ & v3 aggregate first & 29.4 & 28.9--29.4 & 1.03 & 77.3 \\
+ & v4 no join & 27.9 & 27.6--28.0 & 1.09 & 73.3 \\
+ & v5 array lookup & 28.6 & 28.4--31.8 & 1.06 & 75.1 \\
+ & v6 coalesce(1) & 29.9 & 29.8--30.5 & 1.01 & 74.2 \\
+ & v7 CSV on driver & 28.6 & 28.3--29.9 & 1.06 & 76.1 \\
 \midrule
-M3 & v0 baseline & 133.2 & 127.9--135.9 & 1.00 & 354.2 & 1{,}028 \\
- & v1 cache result & 65.8 & 63.1--67.6 & 2.02 & 131.3 & 6{,}412 \\
- & v2 integer keys & 40.3 & 40.3--40.8 & 3.31 & 66.1 & 6{,}412 \\
- & v3 windows on driver & 23.4 & 23.2--23.8 & 5.69 & 57.7 & 32 \\
-\bottomrule
-\end{tabular}\hfill
-\begin{tabular}[t]{@{}llrrrrr@{}}
-\toprule
-Op & version & wall (s) & range (s) & vs v0 & CPU (s) & mem (MB) \\
-\midrule
-O1 & v0 baseline & 89.9 & 88.4--91.2 & 1.00 & 270.9 & 13{,}703 \\
- & v1 projection & 86.1 & 85.2--87.5 & 1.04 & 265.8 & 13{,}703 \\
- & v2 + broadcast & 86.1 & 85.5--86.6 & 1.04 & 266.6 & 13{,}703 \\
- & v3 aggregation, no window & 58.4 & 54.6--60.9 & 1.54 & 164.5 & 1{,}544 \\
- & v4 integer keys & 48.5 & 46.5--49.5 & 1.85 & 134.1 & 1{,}029 \\
- & v5 array, no join & 42.8 & 40.4--44.0 & 2.10 & 113.8 & 64 \\
- & v6 integer counters & 41.6 & 39.5--43.1 & 2.16 & 113.8 & 64 \\
- & v7 per-mile compare & 41.9 & 40.6--44.1 & 2.15 & 111.3 & 64 \\
-\midrule
-O4 & v0 baseline & 88.0 & 87.7--89.6 & 1.00 & 281.5 & 1{,}040 \\
- & v1 projection & 87.0 & 86.7--87.7 & 1.01 & 275.7 & 520 \\
- & v2 broadcast classes & 68.9 & 65.7--69.3 & 1.28 & 188.7 & 520 \\
- & v3 integer keys & 45.2 & 44.9--48.2 & 1.95 & 127.4 & 1{,}029 \\
- & v4 array, no join & 42.2 & 41.8--45.8 & 2.09 & 116.2 & 32 \\
- & v5 one scan & 38.3 & 38.2--39.7 & 2.30 & 83.3 & 6{,}450 \\
- & v6 finish on driver & 26.1 & 26.0--26.5 & 3.37 & 68.8 & 99 \\
-\midrule
-All & best versions & 135.3 & & 2.89 & & \\
+M3 & v0 baseline & 133.2 & 127.9--135.9 & 1.00 & 354.2 \\
+ & v1 cache result & 65.8 & 63.1--67.6 & 2.02 & 131.3 \\
+ & v2 integer keys & 40.3 & 40.3--40.8 & 3.31 & 66.1 \\
+ & v3 windows on driver & 23.4 & 23.2--23.8 & 5.69 & 57.7 \\
 \bottomrule
 \end{tabular}
-\end{table*}
+\end{minipage}
 
-
+\par\medskip\noindent\begin{minipage}{\columnwidth}
+\centering\scriptsize\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}llrrrr@{}}
+\toprule
+Op & version & wall (s) & range (s) & vs v0 & CPU (s) \\
+\midrule
+O1 & v0 baseline & 89.9 & 88.4--91.2 & 1.00 & 270.9 \\
+ & v1 projection & 86.1 & 85.2--87.5 & 1.04 & 265.8 \\
+ & v2 + broadcast & 86.1 & 85.5--86.6 & 1.04 & 266.6 \\
+ & v3 aggregation, no window & 58.4 & 54.6--60.9 & 1.54 & 164.5 \\
+ & v4 integer keys & 48.5 & 46.5--49.5 & 1.85 & 134.1 \\
+ & v5 array, no join & 42.8 & 40.4--44.0 & 2.10 & 113.8 \\
+ & v6 integer counters & 41.6 & 39.5--43.1 & 2.16 & 113.8 \\
+ & v7 per-mile compare & 41.9 & 40.6--44.1 & 2.15 & 111.3 \\
+\midrule
+O4 & v0 baseline & 88.0 & 87.7--89.6 & 1.00 & 281.5 \\
+ & v1 projection & 87.0 & 86.7--87.7 & 1.01 & 275.7 \\
+ & v2 broadcast classes & 68.9 & 65.7--69.3 & 1.28 & 188.7 \\
+ & v3 integer keys & 45.2 & 44.9--48.2 & 1.95 & 127.4 \\
+ & v4 array, no join & 42.2 & 41.8--45.8 & 2.09 & 116.2 \\
+ & v5 one scan & 38.3 & 38.2--39.7 & 2.30 & 83.3 \\
+ & v6 finish on driver & 26.1 & 26.0--26.5 & 3.37 & 68.8 \\
+\midrule
+All & best versions & 135.3 & & 2.89 & \\
+\bottomrule
+\end{tabular}
+\end{minipage}
 \end{document}
