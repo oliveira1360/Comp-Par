@@ -30,6 +30,7 @@ echo "====================================================="
 # Ensures it runs from the project root
 cd "$(dirname "$0")/.." || exit 1
 mkdir -p data output
+chmod 777 data output 2>/dev/null || true
 
 docker compose -f docker/docker-compose.yml up -d --scale spark-worker="${WORKERS}"
 
